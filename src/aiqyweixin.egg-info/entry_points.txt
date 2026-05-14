@@ -1,0 +1,2 @@
+[console_scripts]
+aiqyweixin-serve = aiqyweixin.__main__:main
