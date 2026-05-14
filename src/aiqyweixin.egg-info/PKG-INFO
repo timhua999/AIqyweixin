@@ -2,12 +2,13 @@ Metadata-Version: 2.4
 Name: aiqyweixin
 Version: 0.1.0
 Summary: 企业微信国际物流智能机器人（单租户 MVP）
-Requires-Python: >=3.13
+Requires-Python: >=3.12
 Description-Content-Type: text/markdown
 Requires-Dist: fastapi>=0.115
 Requires-Dist: uvicorn[standard]>=0.32
 Requires-Dist: pydantic-settings>=2.6
 Requires-Dist: python-dotenv>=1.0
+Requires-Dist: pycryptodome>=3.20
 Requires-Dist: sqlalchemy[asyncio]>=2.0.36
 Requires-Dist: asyncpg>=0.30
 Requires-Dist: alembic>=1.14
@@ -55,4 +56,16 @@ alembic upgrade head
 ```
 
 说明见 [alembic/README.md](alembic/README.md)。首次迁移会创建表 `unanswered_tickets`（未答工单）。
+
+## 临时调试接口（仅开发）
+
+当 **`APP_ENV=development`** 或 **`ENABLE_DEBUG_ROUTES=true`**，且已配置 **`DATABASE_URL`** 时，会注册 `POST /debug/unanswered-ticket`（插入一条测试未答工单；可选 JSON 体覆盖默认字段）。
+
+示例（空 body 使用默认）：
+
+```powershell
+curl.exe -X POST http://127.0.0.1:8000/debug/unanswered-ticket
+```
+
+生产请将 `APP_ENV=production` 且 `ENABLE_DEBUG_ROUTES=false`，该路由不会注册。
 

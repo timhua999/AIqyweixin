@@ -3,6 +3,7 @@ pyproject.toml
 src/aiqyweixin/__init__.py
 src/aiqyweixin/__main__.py
 src/aiqyweixin/config.py
+src/aiqyweixin/debug_routes.py
 src/aiqyweixin/health.py
 src/aiqyweixin/logging.py
 src/aiqyweixin/main.py
