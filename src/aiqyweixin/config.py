@@ -11,14 +11,20 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# config.py 位于 src/aiqyweixin/，向上两级为项目根（含 pyproject.toml、.env）
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_DOTENV_PATH = _PROJECT_ROOT / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # 勿仅用 ".env"：从其它 cwd 启动 uvicorn 时会读错目录，导致永不通企微验签解密。
+        env_file=str(_DOTENV_PATH) if _DOTENV_PATH.is_file() else ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
