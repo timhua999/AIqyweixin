@@ -45,6 +45,7 @@ def decrypt_callback_aes(encrypt_b64: str, encoding_aes_key: str, receive_id: st
     解密 URL 校验 echostr 或消息体 Encrypt 字段。
     明文结构：random(16) + msg_len(4, big-endian) + msg + receive_id（一般为 CorpId）
     """
+    recv = (receive_id or "").strip().replace("\r", "").replace("\ufeff", "")
     aes_key = _decode_aes_key(encoding_aes_key)
     iv = aes_key[:_AES_BLOCK]
     ciphertext = base64.b64decode(encrypt_b64)
@@ -59,7 +60,10 @@ def decrypt_callback_aes(encrypt_b64: str, encoding_aes_key: str, receive_id: st
         raise ValueError("invalid msg length in decrypted payload")
 
     msg = plain[20 : 20 + msg_len].decode("utf-8")
-    tail = plain[20 + msg_len :].decode("utf-8")
-    if tail != receive_id:
-        raise ValueError("receive_id suffix mismatch")
+    tail = plain[20 + msg_len :].decode("utf-8").strip().replace("\r", "").replace("\ufeff", "")
+    if tail != recv:
+        raise ValueError(
+            "receive_id suffix mismatch: decrypted tail does not match WECOM_CORP_ID "
+            f"(tail={tail!r}, expected={recv!r})"
+        )
     return msg

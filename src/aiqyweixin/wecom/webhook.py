@@ -50,7 +50,7 @@ async def wecom_callback_verify(
     try:
         plain = decrypt_callback_aes(echostr, aes_key, corp_id)
     except Exception as e:
-        logger.exception("企微 URL 校验：解密失败")
+        logger.warning("企微 URL 校验：解密失败: %s", e, exc_info=True)
         raise HTTPException(status_code=400, detail="decrypt failed") from e
 
     return Response(content=plain, media_type="text/plain; charset=utf-8")

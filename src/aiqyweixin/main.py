@@ -44,15 +44,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(health_router)
-    settings = get_settings()
-    if (
-        (settings.wecom_corp_id or "").strip()
-        and (settings.wecom_token or "").strip()
-        and (settings.wecom_encoding_aes_key or "").strip()
-    ):
-        from aiqyweixin.wecom.webhook import router as wecom_router
+    from aiqyweixin.wecom.webhook import router as wecom_router
 
-        app.include_router(wecom_router)
+    app.include_router(wecom_router)
+    settings = get_settings()
     if settings.database_url and (
         settings.enable_debug_routes or (settings.app_env or "").lower() == "development"
     ):
