@@ -15,6 +15,35 @@ from Crypto.Util.Padding import unpad
 _AES_BLOCK: Final[int] = 16
 
 
+def aes_key_fingerprint(encoding_aes_key: str) -> str:
+    """用于日志比对是否与后台 Key 一致，不输出密钥明文。"""
+    try:
+        raw = _decode_aes_key(encoding_aes_key)
+        return hashlib.sha256(raw).hexdigest()[:16]
+    except Exception:
+        return "invalid-key"
+
+
+def wecom_config_diagnostics(
+    corp_id: str | None,
+    token: str | None,
+    encoding_aes_key: str | None,
+    env_file: str | None = None,
+) -> dict[str, str | int | bool]:
+    aes = (encoding_aes_key or "").strip()
+    if len(aes) >= 2 and aes[0] == aes[-1] and aes[0] in {'"', "'"}:
+        aes = aes[1:-1].strip()
+    return {
+        "env_file": env_file or "",
+        "corp_id_set": bool((corp_id or "").strip()),
+        "corp_id_prefix": ((corp_id or "").strip()[:6] + "...") if corp_id else "",
+        "token_len": len((token or "").strip()),
+        "aes_key_len": len(aes),
+        "aes_key_fp": aes_key_fingerprint(aes) if aes else "missing",
+        "aes_key_ok_len": len(aes) == 43,
+    }
+
+
 def compute_msg_signature(token: str, timestamp: str, nonce: str, encrypt: str) -> str:
     parts = sorted([token, timestamp, nonce, encrypt])
     raw = "".join(parts).encode("utf-8")
@@ -58,7 +87,13 @@ def decrypt_callback_aes(encrypt_b64: str, encoding_aes_key: str, receive_id: st
     iv = aes_key[:_AES_BLOCK]
     ciphertext = base64.b64decode(encrypt_b64)
     cipher = AES.new(aes_key, AES.MODE_CBC, iv)
-    plain = unpad(cipher.decrypt(ciphertext), _AES_BLOCK)
+    try:
+        plain = unpad(cipher.decrypt(ciphertext), _AES_BLOCK)
+    except ValueError as e:
+        raise ValueError(
+            "AES decrypt/padding failed: EncodingAESKey 与企微后台不一致，或 echostr 被破坏 "
+            f"(aes_key_fp={aes_key_fingerprint(encoding_aes_key)})"
+        ) from e
 
     if len(plain) < 20:
         raise ValueError("decrypted payload too short")

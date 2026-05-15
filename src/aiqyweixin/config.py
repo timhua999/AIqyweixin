@@ -21,6 +21,10 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DOTENV_PATH = _PROJECT_ROOT / ".env"
 
 
+def dotenv_path() -> Path:
+    return _DOTENV_PATH
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         # 勿仅用 ".env"：从其它 cwd 启动 uvicorn 时会读错目录，导致永不通企微验签解密。
@@ -58,3 +62,9 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def reload_settings() -> Settings:
+    """修改 .env 后若未重启进程，可调用以刷新（一般仍建议重启 uvicorn）。"""
+    get_settings.cache_clear()
+    return get_settings()

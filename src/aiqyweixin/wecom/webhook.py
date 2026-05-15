@@ -10,8 +10,12 @@ import xml.etree.ElementTree as ET
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
-from aiqyweixin.config import get_settings
-from aiqyweixin.wecom.crypto import decrypt_callback_aes, verify_msg_signature
+from aiqyweixin.config import dotenv_path, get_settings
+from aiqyweixin.wecom.crypto import (
+    decrypt_callback_aes,
+    verify_msg_signature,
+    wecom_config_diagnostics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +35,22 @@ def _require_wecom_crypto_settings():
     return corp, token, aes
 
 
+def _log_decrypt_failure(stage: str, corp_id: str, token: str, aes_key: str, exc: Exception) -> None:
+    diag = wecom_config_diagnostics(corp_id, token, aes_key, str(dotenv_path()))
+    logger.error(
+        "企微 %s 解密失败: %s | 诊断 env_file=%s token_len=%s aes_key_len=%s aes_key_ok_len=%s "
+        "aes_key_fp=%s corp_id_prefix=%s",
+        stage,
+        exc,
+        diag["env_file"],
+        diag["token_len"],
+        diag["aes_key_len"],
+        diag["aes_key_ok_len"],
+        diag["aes_key_fp"],
+        diag["corp_id_prefix"],
+    )
+
+
 @router.get("/callback")
 async def wecom_callback_verify(
     msg_signature: str = Query(..., alias="msg_signature"),
@@ -48,11 +68,19 @@ async def wecom_callback_verify(
         logger.warning("企微 URL 校验：msg_signature 不匹配")
         raise HTTPException(status_code=403, detail="invalid signature")
 
-    try:
-        plain = decrypt_callback_aes(echostr, aes_key, corp_id)
-    except Exception as e:
-        logger.warning("企微 URL 校验：解密失败: %s", e, exc_info=True)
-        raise HTTPException(status_code=400, detail="decrypt failed") from e
+    # 智能机器人 GET 校验：官方 ReceiveId 为空；自建应用尾部为 CorpId
+    last_err: Exception | None = None
+    plain: str | None = None
+    for receive_id in ("", corp_id):
+        try:
+            plain = decrypt_callback_aes(echostr, aes_key, receive_id)
+            logger.info("企微 URL 校验解密成功 receive_id=%r", receive_id or "(empty)")
+            break
+        except Exception as e:
+            last_err = e
+    if plain is None:
+        _log_decrypt_failure("URL校验", corp_id, token, aes_key, last_err or RuntimeError("unknown"))
+        raise HTTPException(status_code=400, detail="decrypt failed") from last_err
 
     return Response(content=plain, media_type="text/plain; charset=utf-8")
 
@@ -97,11 +125,17 @@ async def wecom_callback_message(
         logger.warning("企微消息推送：msg_signature 不匹配")
         raise HTTPException(status_code=403, detail="invalid signature")
 
-    try:
-        xml_plain = decrypt_callback_aes(encrypt, aes_key, corp_id)
-    except Exception as e:
-        logger.exception("企微消息推送：解密失败")
-        raise HTTPException(status_code=400, detail="decrypt failed") from e
+    xml_plain: str | None = None
+    last_err = None
+    for receive_id in ("", corp_id):
+        try:
+            xml_plain = decrypt_callback_aes(encrypt, aes_key, receive_id)
+            break
+        except Exception as e:
+            last_err = e
+    if xml_plain is None:
+        _log_decrypt_failure("POST消息", corp_id, token, aes_key, last_err or RuntimeError("unknown"))
+        raise HTTPException(status_code=400, detail="decrypt failed") from last_err
 
     logger.info("企微消息解密成功（前 500 字符）: %s", xml_plain[:500])
 
