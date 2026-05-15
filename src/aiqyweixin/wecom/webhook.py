@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import xml.etree.ElementTree as ET
 
@@ -68,16 +69,30 @@ async def wecom_callback_message(
     """
     corp_id, token, aes_key = _require_wecom_crypto_settings()
     body = await request.body()
-    try:
-        root = ET.fromstring(body)
-    except ET.ParseError as e:
-        raise HTTPException(status_code=400, detail="invalid xml") from e
+    encrypt: str | None = None
+    stripped = body.lstrip()
+    if stripped.startswith(b"{"):
+        try:
+            data = json.loads(body.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            raise HTTPException(status_code=400, detail="invalid json body") from e
+        if isinstance(data, dict):
+            enc = data.get("encrypt")
+            if isinstance(enc, str) and enc.strip():
+                encrypt = enc.strip()
+        if not encrypt:
+            raise HTTPException(status_code=400, detail="missing encrypt in json")
+    else:
+        try:
+            root = ET.fromstring(body)
+        except ET.ParseError as e:
+            raise HTTPException(status_code=400, detail="invalid xml") from e
 
-    encrypt_el = root.find("Encrypt")
-    if encrypt_el is None or not (encrypt_el.text and encrypt_el.text.strip()):
-        raise HTTPException(status_code=400, detail="missing Encrypt")
+        encrypt_el = root.find("Encrypt")
+        if encrypt_el is None or not (encrypt_el.text and encrypt_el.text.strip()):
+            raise HTTPException(status_code=400, detail="missing Encrypt")
 
-    encrypt = encrypt_el.text.strip()
+        encrypt = encrypt_el.text.strip()
     if not verify_msg_signature(token, timestamp, nonce, encrypt, msg_signature):
         logger.warning("企微消息推送：msg_signature 不匹配")
         raise HTTPException(status_code=403, detail="invalid signature")

@@ -30,6 +30,9 @@ def verify_msg_signature(
 
 def _decode_aes_key(encoding_aes_key: str) -> bytes:
     key = (encoding_aes_key or "").strip()
+    # 避免 .env 写成 WECOM_ENCODING_AES_KEY="xxxx" 时把引号吃进 key
+    if len(key) >= 2 and key[0] == key[-1] and key[0] in {'"', "'"}:
+        key = key[1:-1].strip()
     if not key:
         raise ValueError("empty EncodingAESKey")
     # 43 字符 Base64，补全 padding
@@ -43,7 +46,12 @@ def _decode_aes_key(encoding_aes_key: str) -> bytes:
 def decrypt_callback_aes(encrypt_b64: str, encoding_aes_key: str, receive_id: str) -> str:
     """
     解密 URL 校验 echostr 或消息体 Encrypt 字段。
-    明文结构：random(16) + msg_len(4, big-endian) + msg + receive_id（一般为 CorpId）
+
+    明文结构：random(16) + msg_len(4, big-endian) + msg + receive_id。
+
+    - 自建应用接收消息：包尾 receive_id 一般为 **企业 CorpId**。
+    - **智能机器人**（官方说明）：GET 校验解密后仅有 random/msg_len/msg 三字段，
+      **ReceiveId 为空**；加解密库传 receiveid 用空串。此处允许 **包尾为空** 或 **等于 receive_id**。
     """
     recv = (receive_id or "").strip().replace("\r", "").replace("\ufeff", "")
     aes_key = _decode_aes_key(encoding_aes_key)
@@ -61,9 +69,10 @@ def decrypt_callback_aes(encrypt_b64: str, encoding_aes_key: str, receive_id: st
 
     msg = plain[20 : 20 + msg_len].decode("utf-8")
     tail = plain[20 + msg_len :].decode("utf-8").strip().replace("\r", "").replace("\ufeff", "")
-    if tail != recv:
+    # 智能机器人：tail == ""；普通自建：tail == corp_id
+    if tail != recv and tail != "":
         raise ValueError(
-            "receive_id suffix mismatch: decrypted tail does not match WECOM_CORP_ID "
-            f"(tail={tail!r}, expected={recv!r})"
+            "receive_id suffix mismatch: decrypted tail does not match CorpId / empty "
+            f"(tail={tail!r}, expected CorpId={recv!r} or empty for intelligent robot)"
         )
     return msg
