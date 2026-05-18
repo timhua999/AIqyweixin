@@ -39,4 +39,11 @@ src/aiqyweixin/services/track_service.py
 src/aiqyweixin/wecom/__init__.py
 src/aiqyweixin/wecom/client.py
 src/aiqyweixin/wecom/crypto.py
+src/aiqyweixin/wecom/messages.py
+src/aiqyweixin/wecom/reply.py
 src/aiqyweixin/wecom/webhook.py
+src/aiqyweixin/wecom/wxcrypt.py
+src/aiqyweixin/wecom/vendor/__init__.py
+src/aiqyweixin/wecom/vendor/callback_json_python3/WXBizJsonMsgCrypt.py
+src/aiqyweixin/wecom/vendor/callback_json_python3/__init__.py
+src/aiqyweixin/wecom/vendor/callback_json_python3/ierror.py

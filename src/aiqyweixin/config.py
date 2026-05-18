@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     )
     # 智能机器人传空串；自建应用一般为 CorpId。留空则先 "" 再尝试 WECOM_CORP_ID。
     wecom_receive_id: str = Field(default="", validation_alias=AliasChoices("WECOM_RECEIVE_ID"))
+    # 主动回复文案；含 {content} 时替换为用户消息摘要。
+    wecom_reply_text: str | None = Field(default=None, validation_alias=AliasChoices("WECOM_REPLY_TEXT"))
 
     llm_base_url: str | None = Field(default=None, validation_alias=AliasChoices("LLM_BASE_URL"))
     llm_api_key: str | None = Field(default=None, validation_alias=AliasChoices("LLM_API_KEY"))
