@@ -1,8 +1,7 @@
 ## wecom/
 
 - **用途**：企业微信接入层。
-- **包含**：
-  - 回调消息验签与加解密。
-  - access_token 获取与缓存。
-  - 企业微信 API 调用封装（发消息、邀请入群等，按权限与应用类型确定）。
+- **回调加解密**：使用官方 `WXBizJsonMsgCrypt`（`vendor/callback_json_python3/`，源自 `weworkapi_python-master/callback_json_python3`），适用于**智能机器人 JSON 回调**。
+- **配置**：`WECOM_TOKEN`、`WECOM_ENCODING_AES_KEY`、`WECOM_CORP_ID`；智能机器人 `WECOM_RECEIVE_ID` 留空（默认先空串再试 CorpId）。
+- **路由**：`GET/POST /wecom/callback`（见 `webhook.py`）。
 

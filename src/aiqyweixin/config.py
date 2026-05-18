@@ -46,6 +46,8 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("WECOM_ENCODING_AES_KEY"),
     )
+    # 智能机器人传空串；自建应用一般为 CorpId。留空则先 "" 再尝试 WECOM_CORP_ID。
+    wecom_receive_id: str = Field(default="", validation_alias=AliasChoices("WECOM_RECEIVE_ID"))
 
     llm_base_url: str | None = Field(default=None, validation_alias=AliasChoices("LLM_BASE_URL"))
     llm_api_key: str | None = Field(default=None, validation_alias=AliasChoices("LLM_API_KEY"))

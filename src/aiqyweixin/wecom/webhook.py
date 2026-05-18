@@ -1,20 +1,22 @@
 """
-企业微信「接收消息」回调：GET 做 URL 验证，POST 解密事件/消息（MVP 仅 ack success）。
+企业微信「接收消息」回调：使用官方 WXBizJsonMsgCrypt（智能机器人 JSON）。
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import xml.etree.ElementTree as ET
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
-from aiqyweixin.config import dotenv_path, get_settings
-from aiqyweixin.wecom.crypto import (
-    decrypt_callback_aes,
-    verify_msg_signature,
-    wecom_config_diagnostics,
+from aiqyweixin.config import get_settings
+from aiqyweixin.wecom.vendor.callback_json_python3 import ierror
+from aiqyweixin.wecom.wxcrypt import (
+    WecomCryptError,
+    config_diagnostics,
+    decrypt_post_body,
+    ierror_name,
+    verify_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,24 +32,29 @@ def _require_wecom_crypto_settings():
     if not corp or not token or not aes:
         raise HTTPException(
             status_code=503,
-            detail="缺少 WECOM_CORP_ID / WECOM_TOKEN / WECOM_ENCODING_AES_KEY，无法处理企微回调",
+            detail="缺少 WECOM_CORP_ID / WECOM_TOKEN / WECOM_ENCODING_AES_KEY",
         )
     return corp, token, aes
 
 
-def _log_decrypt_failure(stage: str, corp_id: str, token: str, aes_key: str, exc: Exception) -> None:
-    diag = wecom_config_diagnostics(corp_id, token, aes_key, str(dotenv_path()))
+def _http_status_for_crypt_error(exc: WecomCryptError) -> int:
+    if exc.code == ierror.WXBizMsgCrypt_ValidateSignature_Error:
+        return 403
+    return 400
+
+
+def _log_crypt_failure(stage: str, corp_id: str, token: str, aes: str, exc: Exception) -> None:
+    diag = config_diagnostics(token, aes, corp_id)
     logger.error(
-        "企微 %s 解密失败: %s | 诊断 env_file=%s token_len=%s aes_key_len=%s aes_key_ok_len=%s "
-        "aes_key_fp=%s corp_id_prefix=%s",
+        "企微 %s 失败: %s | env_file=%s token_len=%s aes_key_len=%s aes_key_ok_len=%s "
+        "receive_id_candidates=%s",
         stage,
         exc,
         diag["env_file"],
         diag["token_len"],
         diag["aes_key_len"],
         diag["aes_key_ok_len"],
-        diag["aes_key_fp"],
-        diag["corp_id_prefix"],
+        diag["receive_id_candidates"],
     )
 
 
@@ -58,29 +65,15 @@ async def wecom_callback_verify(
     nonce: str = Query(..., alias="nonce"),
     echostr: str = Query(..., alias="echostr"),
 ) -> Response:
-    """
-    保存回调 URL 时企微会 GET 本接口：验签后解密 echostr，响应体为明文 echostr（非 JSON）。
-    """
     corp_id, token, aes_key = _require_wecom_crypto_settings()
-    # 部分链路会把 Base64 里的「+」变成空格，需还原才能解密
-    echostr = echostr.replace(" ", "+")
-    if not verify_msg_signature(token, timestamp, nonce, echostr, msg_signature):
-        logger.warning("企微 URL 校验：msg_signature 不匹配")
-        raise HTTPException(status_code=403, detail="invalid signature")
-
-    # 智能机器人 GET 校验：官方 ReceiveId 为空；自建应用尾部为 CorpId
-    last_err: Exception | None = None
-    plain: str | None = None
-    for receive_id in ("", corp_id):
-        try:
-            plain = decrypt_callback_aes(echostr, aes_key, receive_id)
-            logger.info("企微 URL 校验解密成功 receive_id=%r", receive_id or "(empty)")
-            break
-        except Exception as e:
-            last_err = e
-    if plain is None:
-        _log_decrypt_failure("URL校验", corp_id, token, aes_key, last_err or RuntimeError("unknown"))
-        raise HTTPException(status_code=400, detail="decrypt failed") from last_err
+    try:
+        _rid, plain = verify_url(token, aes_key, corp_id, msg_signature, timestamp, nonce, echostr)
+    except WecomCryptError as e:
+        _log_crypt_failure("URL校验", corp_id, token, aes_key, e)
+        raise HTTPException(
+            status_code=_http_status_for_crypt_error(e),
+            detail=f"wecom verify failed: {ierror_name(e.code)}",
+        ) from e
 
     return Response(content=plain, media_type="text/plain; charset=utf-8")
 
@@ -92,52 +85,32 @@ async def wecom_callback_message(
     timestamp: str = Query(..., alias="timestamp"),
     nonce: str = Query(..., alias="nonce"),
 ) -> Response:
-    """
-    接收加密消息/事件；当前仅验签+解密日志，业务编排后续再接。
-    """
     corp_id, token, aes_key = _require_wecom_crypto_settings()
-    body = await request.body()
-    encrypt: str | None = None
-    stripped = body.lstrip()
-    if stripped.startswith(b"{"):
+    body_bytes = await request.body()
+    post_data = body_bytes.decode("utf-8")
+
+    # 智能机器人为 JSON；若仅有 encrypt 字段则包成官方示例格式
+    stripped = post_data.lstrip()
+    if stripped.startswith("{"):
         try:
-            data = json.loads(body.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            data = json.loads(post_data)
+        except json.JSONDecodeError as e:
             raise HTTPException(status_code=400, detail="invalid json body") from e
-        if isinstance(data, dict):
-            enc = data.get("encrypt")
-            if isinstance(enc, str) and enc.strip():
-                encrypt = enc.strip()
-        if not encrypt:
+        if isinstance(data, dict) and "encrypt" in data and len(data) == 1:
+            post_data = json.dumps({"encrypt": data["encrypt"]}, ensure_ascii=False)
+        elif isinstance(data, dict) and "encrypt" not in data:
             raise HTTPException(status_code=400, detail="missing encrypt in json")
-    else:
-        try:
-            root = ET.fromstring(body)
-        except ET.ParseError as e:
-            raise HTTPException(status_code=400, detail="invalid xml") from e
 
-        encrypt_el = root.find("Encrypt")
-        if encrypt_el is None or not (encrypt_el.text and encrypt_el.text.strip()):
-            raise HTTPException(status_code=400, detail="missing Encrypt")
+    try:
+        _rid, plain = decrypt_post_body(
+            token, aes_key, corp_id, post_data, msg_signature, timestamp, nonce
+        )
+    except WecomCryptError as e:
+        _log_crypt_failure("POST消息", corp_id, token, aes_key, e)
+        raise HTTPException(
+            status_code=_http_status_for_crypt_error(e),
+            detail=f"wecom decrypt failed: {ierror_name(e.code)}",
+        ) from e
 
-        encrypt = encrypt_el.text.strip()
-    if not verify_msg_signature(token, timestamp, nonce, encrypt, msg_signature):
-        logger.warning("企微消息推送：msg_signature 不匹配")
-        raise HTTPException(status_code=403, detail="invalid signature")
-
-    xml_plain: str | None = None
-    last_err = None
-    for receive_id in ("", corp_id):
-        try:
-            xml_plain = decrypt_callback_aes(encrypt, aes_key, receive_id)
-            break
-        except Exception as e:
-            last_err = e
-    if xml_plain is None:
-        _log_decrypt_failure("POST消息", corp_id, token, aes_key, last_err or RuntimeError("unknown"))
-        raise HTTPException(status_code=400, detail="decrypt failed") from last_err
-
-    logger.info("企微消息解密成功（前 500 字符）: %s", xml_plain[:500])
-
-    # 暂不回复用户时返回明文 success（兼容/明文场景；若后台仅开安全模式且要求密文回复再扩展）
+    logger.info("企微消息解密成功（前 500 字符）: %s", plain[:500])
     return Response(content="success", media_type="text/plain; charset=utf-8")
