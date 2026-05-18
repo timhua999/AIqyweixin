@@ -18,8 +18,18 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, object]:
+    try:
+        import importlib.metadata
+
+        version = importlib.metadata.version("aiqyweixin")
+    except Exception:
+        version = "unknown"
+    return {
+        "status": "ok",
+        "version": version,
+        "wecom_auto_reply": True,
+    }
 
 
 @router.get("/ready")

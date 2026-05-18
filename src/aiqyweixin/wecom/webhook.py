@@ -26,20 +26,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/wecom", tags=["wecom"])
 
 _DEFAULT_REPLY_TEMPLATE = "已收到您的消息：{content}"
-_seen_msgids: set[str] = set()
-_MAX_SEEN_MSGIDS = 5000
+# 仅在主动回复成功后才记录，避免首次失败 + 企微重试时被误判为已处理
+_replied_msgids: set[str] = set()
+_MAX_REPLIED_MSGIDS = 5000
 
 
-def _mark_msgid_seen(msgid: str) -> bool:
-    """返回 True 表示重复 msgid（应跳过回复）。"""
+def _already_replied(msgid: str) -> bool:
+    return bool(msgid) and msgid in _replied_msgids
+
+
+def _mark_replied(msgid: str) -> None:
     if not msgid:
-        return False
-    if msgid in _seen_msgids:
-        return True
-    _seen_msgids.add(msgid)
-    if len(_seen_msgids) > _MAX_SEEN_MSGIDS:
-        _seen_msgids.clear()
-    return False
+        return
+    _replied_msgids.add(msgid)
+    if len(_replied_msgids) > _MAX_REPLIED_MSGIDS:
+        _replied_msgids.clear()
 
 
 def _reply_template() -> str:
@@ -50,9 +51,10 @@ def _reply_template() -> str:
 async def _send_auto_reply(response_url: str, content: str, msgid: str) -> None:
     try:
         await post_active_reply(response_url, content)
+        _mark_replied(msgid)
         logger.info("企微主动回复成功 msgid=%s", msgid or "(none)")
     except Exception:
-        logger.exception("企微主动回复失败 msgid=%s", msgid or "(none)")
+        logger.exception("企微主动回复失败 msgid=%s（企微重试时可再次尝试）", msgid or "(none)")
 
 
 def _require_wecom_crypto_settings():
@@ -156,8 +158,8 @@ async def wecom_callback_message(
         return Response(content="success", media_type="text/plain; charset=utf-8")
 
     msgid = str(payload.get("msgid") or "")
-    if _mark_msgid_seen(msgid):
-        logger.info("重复 msgid，跳过主动回复: %s", msgid)
+    if _already_replied(msgid):
+        logger.info("该 msgid 已成功回复过，跳过: %s", msgid)
         return Response(content="success", media_type="text/plain; charset=utf-8")
 
     if not should_reply(payload):

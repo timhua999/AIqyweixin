@@ -32,6 +32,12 @@ async def post_active_reply(response_url: str, content: str) -> None:
     body = markdown_reply_body(content)
     async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as client:
         resp = await client.post(url, json=body)
-        resp.raise_for_status()
-        if resp.content:
-            logger.debug("response_url 响应: %s %s", resp.status_code, resp.text[:500])
+        body_preview = (resp.text or "")[:500]
+        if resp.status_code >= 400:
+            logger.error(
+                "response_url 失败 HTTP %s body=%s",
+                resp.status_code,
+                body_preview,
+            )
+            resp.raise_for_status()
+        logger.info("response_url 成功 HTTP %s body=%s", resp.status_code, body_preview or "(empty)")
