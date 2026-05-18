@@ -89,17 +89,17 @@ async def wecom_callback_message(
     body_bytes = await request.body()
     post_data = body_bytes.decode("utf-8")
 
-    # 智能机器人为 JSON；若仅有 encrypt 字段则包成官方示例格式
+    # 智能机器人为 JSON：{"encrypt":"..."}，与 Sample.DecryptMsg 一致（只需含 encrypt 字段）
     stripped = post_data.lstrip()
     if stripped.startswith("{"):
         try:
             data = json.loads(post_data)
         except json.JSONDecodeError as e:
             raise HTTPException(status_code=400, detail="invalid json body") from e
-        if isinstance(data, dict) and "encrypt" in data and len(data) == 1:
-            post_data = json.dumps({"encrypt": data["encrypt"]}, ensure_ascii=False)
-        elif isinstance(data, dict) and "encrypt" not in data:
+        if not isinstance(data, dict) or "encrypt" not in data:
             raise HTTPException(status_code=400, detail="missing encrypt in json")
+        if not (data.get("encrypt") and str(data["encrypt"]).strip()):
+            raise HTTPException(status_code=400, detail="empty encrypt in json")
 
     try:
         _rid, plain = decrypt_post_body(

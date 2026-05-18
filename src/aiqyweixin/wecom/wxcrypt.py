@@ -49,20 +49,50 @@ def _normalize_aes_key(key: str) -> str:
     return k
 
 
-def receive_id_candidates(corp_id: str) -> list[str]:
-    """
-    解密时包尾 receiveid 的候选值。
-    可通过 WECOM_RECEIVE_ID 显式指定。
-    未指定时：先 CorpId（多数企业/智能机器人 URL 校验实测尾部为企业 ID），再试空串。
-    """
+def _explicit_receive_id() -> str | None:
+    """WECOM_RECEIVE_ID 显式配置时返回该值；未配置则 None。"""
     s = get_settings()
-    explicit = (s.wecom_receive_id if s.wecom_receive_id is not None else "").strip()
-    corp = (corp_id or "").strip()
-    if explicit:
+    if s.wecom_receive_id is None:
+        return None
+    rid = s.wecom_receive_id.strip()
+    return rid if rid else ""
+
+
+def receive_id_candidates_for_verify(corp_id: str) -> list[str]:
+    """
+    GET 校验 echostr（对应 Sample.VerifyURL 的第三参 sReceiveId）。
+
+    官方 Sample：WXBizJsonMsgCrypt(sToken, sEncodingAESKey, sCorpID)。
+    智能机器人文档亦提到 ReceiveId 可为空；未显式配置时先 CorpId 再空串。
+    """
+    explicit = _explicit_receive_id()
+    if explicit is not None:
         return [explicit]
+    corp = (corp_id or "").strip()
     if corp:
         return [corp, ""]
     return [""]
+
+
+def receive_id_candidates_for_message(corp_id: str) -> list[str]:
+    """
+    POST 解密用户消息（对应 Sample.DecryptMsg 的第三参）。
+
+    智能机器人：官方要求 receiveid 传 **空字符串**（与 sCorpID 不同）。
+    未显式配置时：**先空串，再 CorpId**。
+    """
+    explicit = _explicit_receive_id()
+    if explicit is not None:
+        return [explicit]
+    corp = (corp_id or "").strip()
+    if corp:
+        return ["", corp]
+    return [""]
+
+
+def receive_id_candidates(corp_id: str) -> list[str]:
+    """兼容旧调用：等同 URL 校验顺序。"""
+    return receive_id_candidates_for_verify(corp_id)
 
 
 def compute_msg_signature(token: str, timestamp: str, nonce: str, encrypt: str) -> str:
@@ -111,7 +141,7 @@ def verify_url(
     token = (token or "").strip()
     last_code = ierror.WXBizMsgCrypt_ValidateSignature_Error
     for ech in _echostr_variants(echostr):
-        for rid in receive_id_candidates(corp_id):
+        for rid in receive_id_candidates_for_verify(corp_id):
             wxcpt = create_wxcrypt(token, encoding_aes_key, rid)
             ret, plain = wxcpt.VerifyURL(msg_signature, timestamp, nonce, ech)
             if ret == ierror.WXBizMsgCrypt_OK and plain is not None:
@@ -154,7 +184,7 @@ def decrypt_post_body(
 ) -> tuple[str, str]:
     """POST 消息解密。返回 (使用的 receive_id, 明文 JSON 字符串)。"""
     last_code = ierror.WXBizMsgCrypt_DecryptAES_Error
-    for rid in receive_id_candidates(corp_id):
+    for rid in receive_id_candidates_for_message(corp_id):
         wxcpt = create_wxcrypt(token, encoding_aes_key, rid)
         ret, plain = wxcpt.DecryptMsg(post_data, msg_signature, timestamp, nonce)
         if ret == ierror.WXBizMsgCrypt_OK and plain is not None:
@@ -185,5 +215,6 @@ def config_diagnostics(token: str | None, encoding_aes_key: str | None, corp_id:
         "token_len": len((token or "").strip()),
         "aes_key_len": len(aes),
         "aes_key_ok_len": len(aes) == 43,
-        "receive_id_candidates": receive_id_candidates((corp_id or "").strip()),
+        "receive_id_verify": receive_id_candidates_for_verify((corp_id or "").strip()),
+        "receive_id_message": receive_id_candidates_for_message((corp_id or "").strip()),
     }
