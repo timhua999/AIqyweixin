@@ -7,9 +7,11 @@ aiqyweixin.wecom.vendor.callback_json_python3。
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import sys
 from pathlib import Path
+from urllib.parse import unquote, unquote_plus
 
 from aiqyweixin.config import dotenv_path, get_settings
 
@@ -63,6 +65,29 @@ def receive_id_candidates(corp_id: str) -> list[str]:
     return out
 
 
+def compute_msg_signature(token: str, timestamp: str, nonce: str, encrypt: str) -> str:
+    """与官方 SHA1.getSHA1 相同算法。"""
+    parts = sorted([str(token), str(timestamp), str(nonce), str(encrypt)])
+    return hashlib.sha1("".join(parts).encode("utf-8")).hexdigest()
+
+
+def _echostr_variants(echostr: str) -> list[str]:
+    """Urldecode 后用于验签/解密的 echostr 候选（避免 + 被当成空格等）。"""
+    s = (echostr or "").strip()
+    out: list[str] = []
+
+    def add(v: str) -> None:
+        v = (v or "").strip()
+        if v and v not in out:
+            out.append(v)
+
+    add(s)
+    add(s.replace(" ", "+"))
+    add(unquote(s))
+    add(unquote_plus(s))
+    return out
+
+
 def create_wxcrypt(token: str, encoding_aes_key: str, receive_id: str) -> WXBizJsonMsgCrypt:
     return WXBizJsonMsgCrypt(
         (token or "").strip(),
@@ -83,21 +108,38 @@ def verify_url(
     """
     GET 回调 URL 验证。返回 (使用的 receive_id, 明文 echostr)。
     """
-    echostr = (echostr or "").replace(" ", "+")
-    last_code = ierror.WXBizMsgCrypt_DecryptAES_Error
-    for rid in receive_id_candidates(corp_id):
-        wxcpt = create_wxcrypt(token, encoding_aes_key, rid)
-        ret, plain = wxcpt.VerifyURL(msg_signature, timestamp, nonce, echostr)
-        if ret == ierror.WXBizMsgCrypt_OK and plain is not None:
-            logger.info("企微 VerifyURL 成功 receive_id=%r", rid or "(empty)")
-            return rid, plain
-        last_code = ret
-        logger.warning(
-            "企微 VerifyURL 失败 ret=%s (%s) receive_id=%r",
-            ret,
-            ierror_name(ret),
-            rid or "(empty)",
-        )
+    token = (token or "").strip()
+    last_code = ierror.WXBizMsgCrypt_ValidateSignature_Error
+    for ech in _echostr_variants(echostr):
+        for rid in receive_id_candidates(corp_id):
+            wxcpt = create_wxcrypt(token, encoding_aes_key, rid)
+            ret, plain = wxcpt.VerifyURL(msg_signature, timestamp, nonce, ech)
+            if ret == ierror.WXBizMsgCrypt_OK and plain is not None:
+                logger.info(
+                    "企微 VerifyURL 成功 receive_id=%r echostr_len=%d",
+                    rid or "(empty)",
+                    len(ech),
+                )
+                return rid, plain
+            last_code = ret
+            if ret == ierror.WXBizMsgCrypt_ValidateSignature_Error:
+                computed = compute_msg_signature(token, timestamp, nonce, ech)
+                logger.warning(
+                    "企微验签失败 receive_id=%r echostr_len=%d computed_sig=%s msg_signature=%s "
+                    "token_len=%d（请核对 .env 的 WECOM_TOKEN 与企微后台/调试工具是否完全一致）",
+                    rid or "(empty)",
+                    len(ech),
+                    computed,
+                    msg_signature,
+                    len(token),
+                )
+            else:
+                logger.warning(
+                    "企微 VerifyURL 失败 ret=%s (%s) receive_id=%r",
+                    ret,
+                    ierror_name(ret),
+                    rid or "(empty)",
+                )
     raise WecomCryptError(last_code, "VerifyURL")
 
 

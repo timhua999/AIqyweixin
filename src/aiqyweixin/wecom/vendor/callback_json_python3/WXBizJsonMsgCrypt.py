@@ -225,7 +225,7 @@ class WXBizJsonMsgCrypt(object):
         ret,signature = sha1.getSHA1(self.m_sToken, sTimeStamp, sNonce, sEchoStr)
         if ret  != 0:
             return ret, None 
-        if not signature == sMsgSignature:
+        if (signature or "").lower() != (sMsgSignature or "").lower():
             return ierror.WXBizMsgCrypt_ValidateSignature_Error, None
         pc = Prpcrypt(self.key)
         ret,sReplyEchoStr = pc.decrypt(sEchoStr,self.m_sReceiveId)
@@ -270,9 +270,7 @@ class WXBizJsonMsgCrypt(object):
         ret,signature = sha1.getSHA1(self.m_sToken, sTimeStamp, sNonce, encrypt)
         if ret  != 0:
             return ret, None 
-        if not signature == sMsgSignature:
-            print("signature not match")
-            print(signature)
+        if (signature or "").lower() != (sMsgSignature or "").lower():
             return ierror.WXBizMsgCrypt_ValidateSignature_Error, None
         pc = Prpcrypt(self.key)
         ret,json_content = pc.decrypt(encrypt,self.m_sReceiveId)
