@@ -12,17 +12,23 @@ import os
 
 import uvicorn
 
+from aiqyweixin.config import get_settings
+from aiqyweixin.logging import configure_logging
+
 
 def main() -> None:
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8000"))
     reload = os.getenv("RELOAD", "true").lower() in {"1", "true", "yes"}
+    settings = get_settings()
+    configure_logging(settings.log_level)
 
     uvicorn.run(
         "aiqyweixin.main:app",
         host=host,
         port=port,
         reload=reload,
+        log_level=(settings.log_level or "info").lower(),
     )
 
 

@@ -17,6 +17,7 @@ from fastapi import FastAPI
 
 from aiqyweixin.config import get_settings
 from aiqyweixin.health import router as health_router
+from aiqyweixin.logging import configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     settings = get_settings()
+    configure_logging(settings.log_level)
     if settings.database_url:
         from aiqyweixin.persistence import session as db_session
 
@@ -38,6 +40,7 @@ async def lifespan(_app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    configure_logging(get_settings().log_level)
     app = FastAPI(
         title="AIqyweixin",
         description="企业微信国际物流智能机器人（单租户 MVP）",

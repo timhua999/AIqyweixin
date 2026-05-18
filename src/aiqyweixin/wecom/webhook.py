@@ -161,16 +161,22 @@ async def wecom_callback_message(
         return Response(content="success", media_type="text/plain; charset=utf-8")
 
     if not should_reply(payload):
-        logger.debug(
-            "无需主动回复 msgtype=%s has_url=%s",
+        logger.info(
+            "跳过主动回复 msgtype=%s response_url=%s",
             payload.get("msgtype"),
-            bool((payload.get("response_url") or "").strip()),
+            "有" if (payload.get("response_url") or "").strip() else "无",
         )
         return Response(content="success", media_type="text/plain; charset=utf-8")
 
     response_url = str(payload["response_url"]).strip()
     user_text = extract_user_text(payload)
     reply_content = format_reply_text(user_text, _reply_template())
+    logger.info(
+        "安排主动回复 msgid=%s msgtype=%s 预览=%s",
+        msgid or "(none)",
+        payload.get("msgtype"),
+        reply_content[:80],
+    )
     background_tasks.add_task(_send_auto_reply, response_url, reply_content, msgid)
 
     return Response(content="success", media_type="text/plain; charset=utf-8")
