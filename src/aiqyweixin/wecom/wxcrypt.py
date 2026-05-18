@@ -51,18 +51,18 @@ def _normalize_aes_key(key: str) -> str:
 
 def receive_id_candidates(corp_id: str) -> list[str]:
     """
-    智能机器人：ReceiveId 传空串；自建应用：一般为 CorpId。
-    可通过 WECOM_RECEIVE_ID 显式指定；未指定时先空串再 CorpId。
+    解密时包尾 receiveid 的候选值。
+    可通过 WECOM_RECEIVE_ID 显式指定。
+    未指定时：先 CorpId（多数企业/智能机器人 URL 校验实测尾部为企业 ID），再试空串。
     """
     s = get_settings()
     explicit = (s.wecom_receive_id if s.wecom_receive_id is not None else "").strip()
     corp = (corp_id or "").strip()
     if explicit:
         return [explicit]
-    out: list[str] = [""]
-    if corp and corp not in out:
-        out.append(corp)
-    return out
+    if corp:
+        return [corp, ""]
+    return [""]
 
 
 def compute_msg_signature(token: str, timestamp: str, nonce: str, encrypt: str) -> str:

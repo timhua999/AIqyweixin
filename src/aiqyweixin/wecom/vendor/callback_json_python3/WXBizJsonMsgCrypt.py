@@ -189,9 +189,8 @@ class Prpcrypt(object):
         except Exception as e:
             print(e)
             return  ierror.WXBizMsgCrypt_IllegalBuffer,None
-        if  from_receiveid != receiveid:
-            print("receiveid not match", receiveid, from_receiveid)
-            return ierror.WXBizMsgCrypt_ValidateCorpid_Error,None
+        if from_receiveid != receiveid:
+            return ierror.WXBizMsgCrypt_ValidateCorpid_Error, None
         return 0,json_content
     
     def get_random_str(self):
