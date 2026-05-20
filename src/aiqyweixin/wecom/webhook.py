@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from aiqyweixin.config import get_settings
 from aiqyweixin.wecom.messages import extract_user_text, format_reply_text, should_reply
@@ -24,6 +25,11 @@ from aiqyweixin.wecom.wxcrypt import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/wecom", tags=["wecom"])
+
+
+def _trace(msg: str) -> None:
+    """写入 stderr，避免被 Uvicorn 日志配置挡住（部署排查用）。"""
+    print(f"[aiqyweixin] {msg}", file=sys.stderr, flush=True)
 
 _DEFAULT_REPLY_TEMPLATE = "已收到您的消息：{content}"
 # 仅在主动回复成功后才记录，避免首次失败 + 企微重试时被误判为已处理
@@ -53,8 +59,10 @@ async def _send_auto_reply(response_url: str, content: str, msgid: str) -> None:
         await post_active_reply(response_url, content)
         _mark_replied(msgid)
         logger.info("企微主动回复成功 msgid=%s", msgid or "(none)")
-    except Exception:
+        _trace(f"主动回复成功 msgid={msgid or '(none)'}")
+    except Exception as exc:
         logger.exception("企微主动回复失败 msgid=%s（企微重试时可再次尝试）", msgid or "(none)")
+        _trace(f"主动回复失败 msgid={msgid or '(none)'}: {exc}")
 
 
 def _require_wecom_crypto_settings():
@@ -114,7 +122,6 @@ async def wecom_callback_verify(
 @router.post("/callback")
 async def wecom_callback_message(
     request: Request,
-    background_tasks: BackgroundTasks,
     msg_signature: str = Query(..., alias="msg_signature"),
     timestamp: str = Query(..., alias="timestamp"),
     nonce: str = Query(..., alias="nonce"),
@@ -147,38 +154,45 @@ async def wecom_callback_message(
         ) from e
 
     logger.info("企微消息解密成功（前 500 字符）: %s", plain[:500])
+    _trace(f"解密成功: {plain[:200]}")
 
     try:
         payload = json.loads(plain)
     except json.JSONDecodeError:
         logger.warning("解密结果非 JSON，跳过主动回复")
+        _trace("解密结果非 JSON，跳过回复")
         return Response(content="success", media_type="text/plain; charset=utf-8")
 
     if not isinstance(payload, dict):
         return Response(content="success", media_type="text/plain; charset=utf-8")
 
     msgid = str(payload.get("msgid") or "")
+    msgtype = payload.get("msgtype")
     if _already_replied(msgid):
         logger.info("该 msgid 已成功回复过，跳过: %s", msgid)
+        _trace(f"msgid 已回复过，跳过: {msgid}")
         return Response(content="success", media_type="text/plain; charset=utf-8")
 
     if not should_reply(payload):
         logger.info(
             "跳过主动回复 msgtype=%s response_url=%s",
-            payload.get("msgtype"),
+            msgtype,
             "有" if (payload.get("response_url") or "").strip() else "无",
         )
+        has_url = "有" if (payload.get("response_url") or "").strip() else "无"
+        _trace(f"跳过回复 msgtype={msgtype} response_url={has_url}")
         return Response(content="success", media_type="text/plain; charset=utf-8")
 
     response_url = str(payload["response_url"]).strip()
     user_text = extract_user_text(payload)
     reply_content = format_reply_text(user_text, _reply_template())
     logger.info(
-        "安排主动回复 msgid=%s msgtype=%s 预览=%s",
+        "开始主动回复 msgid=%s msgtype=%s 预览=%s",
         msgid or "(none)",
-        payload.get("msgtype"),
+        msgtype,
         reply_content[:80],
     )
-    background_tasks.add_task(_send_auto_reply, response_url, reply_content, msgid)
+    _trace(f"开始主动回复 msgid={msgid} msgtype={msgtype}")
+    await _send_auto_reply(response_url, reply_content, msgid)
 
     return Response(content="success", media_type="text/plain; charset=utf-8")

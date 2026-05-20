@@ -26,10 +26,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
-    logger.info(
-        "aiqyweixin 已启动（企微自动回复已启用，LOG_LEVEL=%s）",
-        settings.log_level,
-    )
+    import sys
+
+    msg = f"aiqyweixin 已启动（企微自动回复已启用，LOG_LEVEL={settings.log_level}）"
+    logger.info(msg)
+    print(f"[aiqyweixin] {msg}", file=sys.stderr, flush=True)
     if settings.database_url:
         from aiqyweixin.persistence import session as db_session
 
