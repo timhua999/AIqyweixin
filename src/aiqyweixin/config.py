@@ -66,6 +66,29 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("ENABLE_DEBUG_ROUTES"),
     )
 
+    # 百运 by56.com Router API（规则见 docs/api/by56-quote-api.md）
+    by56_enabled: bool = Field(default=False, validation_alias=AliasChoices("BY56_ENABLED"))
+    by56_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BY56_BASE_URL"),
+    )
+    by56_bykey: str | None = Field(default=None, validation_alias=AliasChoices("BY56_BYKEY"))
+    by56_app_id: str | None = Field(default=None, validation_alias=AliasChoices("BY56_APP_ID"))
+    by56_app_secret: str | None = Field(default=None, validation_alias=AliasChoices("BY56_APP_SECRET"))
+    by56_calls: str = Field(default="byapi", validation_alias=AliasChoices("BY56_CALLS"))
+    by56_method_commodity: str | None = Field(
+        default="By56CustomerAPI.byExpOrder.ExpOrder.GetCommodityEXP",
+        validation_alias=AliasChoices("BY56_METHOD_COMMODITY"),
+    )
+    by56_method_quote: str | None = Field(
+        default="By56CustomerAPI.byExpOrder.ExpOrder.QueryPriceEXP",
+        validation_alias=AliasChoices("BY56_METHOD_QUOTE"),
+    )
+    by56_timeout_seconds: float = Field(
+        default=30.0,
+        validation_alias=AliasChoices("BY56_TIMEOUT_SECONDS"),
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

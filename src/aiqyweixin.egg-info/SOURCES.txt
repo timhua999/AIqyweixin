@@ -15,6 +15,7 @@ src/aiqyweixin.egg-info/requires.txt
 src/aiqyweixin.egg-info/top_level.txt
 src/aiqyweixin/adapters/__init__.py
 src/aiqyweixin/adapters/base.py
+src/aiqyweixin/adapters/by56.py
 src/aiqyweixin/adapters/provider_example.py
 src/aiqyweixin/adapters/registry.py
 src/aiqyweixin/admin/__init__.py

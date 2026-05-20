@@ -1,9 +1,19 @@
 """
 物流商适配器接口定义。
-
-职责：
-- 定义 quote/track 等标准方法签名
-- 约束实现：对外部 API 的差异都在适配器内消化
-- 定义统一错误类型与错误码映射策略
 """
 
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+
+from aiqyweixin.models.dto import QuoteRequest, QuoteResult
+
+
+class LogisticsAdapter(ABC):
+    """查价 / 轨迹等能力的统一入口。"""
+
+    provider: str
+
+    @abstractmethod
+    async def quote(self, request: QuoteRequest) -> QuoteResult:
+        """询价；价格数字必须来自远端 API 响应，不得由模型编造。"""
