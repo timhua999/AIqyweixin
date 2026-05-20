@@ -80,8 +80,13 @@ class Settings(BaseSettings):
         default="By56CustomerAPI.byExpOrder.ExpOrder.GetCommodityEXP",
         validation_alias=AliasChoices("BY56_METHOD_COMMODITY"),
     )
+    by56_method_delivery_no: str | None = Field(
+        default="By56CustomerAPI.byPackOrder.PackOrder.GetDeliveryNO",
+        validation_alias=AliasChoices("BY56_METHOD_DELIVERY_NO"),
+    )
+    # 查价 method（非 §3.7；待 open.by56 查价接口编号确认后填写）
     by56_method_quote: str | None = Field(
-        default="By56CustomerAPI.byExpOrder.ExpOrder.QueryPriceEXP",
+        default=None,
         validation_alias=AliasChoices("BY56_METHOD_QUOTE"),
     )
     by56_timeout_seconds: float = Field(

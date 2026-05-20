@@ -62,6 +62,7 @@ class By56RouterClient:
         self._calls = (s.by56_calls or "byapi").strip()
         self._timeout = httpx.Timeout(float(s.by56_timeout_seconds), connect=10.0)
         self.method_commodity = (s.by56_method_commodity or "").strip()
+        self.method_delivery_no = (s.by56_method_delivery_no or "").strip()
         self.method_quote = (s.by56_method_quote or "").strip()
 
     @property
@@ -152,8 +153,14 @@ class By56RouterClient:
             raise By56ApiError("未配置 BY56_METHOD_COMMODITY（§3.6）")
         return await self.call_ok(self.method_commodity, business)
 
+    async def get_delivery_no(self, business: dict[str, Any] | None = None) -> Any:
+        """§3.7 获取百运跟踪号 GetDeliveryNO。"""
+        if not self.method_delivery_no:
+            raise By56ApiError("未配置 BY56_METHOD_DELIVERY_NO（§3.7）")
+        return await self.call_ok(self.method_delivery_no, business)
+
     async def query_price_exp(self, business: dict[str, Any] | None = None) -> Any:
-        """§3.7 快递查价（默认 method 见 BY56_METHOD_QUOTE，可在 .env 覆盖）。"""
+        """查价（method 见 BY56_METHOD_QUOTE，与 §3.7 无关）。"""
         if not self.method_quote:
-            raise By56ApiError("未配置 BY56_METHOD_QUOTE（§3.7）")
+            raise By56ApiError("未配置 BY56_METHOD_QUOTE（查价接口）")
         return await self.call_ok(self.method_quote, business)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""百运查价联调（§3.6 货物种类 / §3.7 查价）。"""
+"""百运查价联调（§3.6 货物种类；查价需配置 BY56_METHOD_QUOTE）。§3.7 跟踪号请用 test_by56_delivery_no.py。"""
 
 from __future__ import annotations
 

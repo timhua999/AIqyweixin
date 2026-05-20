@@ -70,3 +70,61 @@ class QuoteResult:
         if len(self.offers) > max_offers:
             lines.append(f"\n… 另有 {len(self.offers) - max_offers} 条渠道未展示")
         return "\n".join(lines)
+
+
+# 百运 §3.7 WaybillType
+BY56_WAYBILL_TYPE_EXPRESS: int = 1  # 快递、专线
+BY56_WAYBILL_TYPE_FBA: int = 20
+
+
+@dataclass
+class DeliveryNoRequest:
+    """§3.7 获取百运跟踪号入参。"""
+
+    waybill_numbers: list[str]
+    waybill_type: int = BY56_WAYBILL_TYPE_EXPRESS
+
+    def waybill_no_param(self) -> str:
+        """多个订单号用英文逗号拼接。"""
+        parts = [n.strip() for n in self.waybill_numbers if n and str(n).strip()]
+        return ",".join(parts)
+
+
+@dataclass
+class DeliveryNoItem:
+    """§3.7 Data 数组单条。"""
+
+    waybill_no: str
+    is_delivery_no: bool = False
+    delivery_no: str | None = None
+    mode_code: str | None = None
+    base_mode_code: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DeliveryNoResult:
+    success: bool
+    items: list[DeliveryNoItem] = field(default_factory=list)
+    error_code: str | None = None
+    error_message: str | None = None
+    raw_response: Any = None
+
+    def to_markdown(self) -> str:
+        if not self.success:
+            msg = self.error_message or "查询失败"
+            code = f"（{self.error_code}）" if self.error_code else ""
+            return f"**跟踪号查询失败**{code}\n\n{msg}"
+        if not self.items:
+            return "**跟踪号查询成功**，但未返回数据。"
+        lines = ["**百运跟踪号查询结果**", ""]
+        for row in self.items:
+            mode_parts = [p for p in (row.base_mode_code, row.mode_code) if p]
+            mode = f"（{' / '.join(mode_parts)}）" if mode_parts else ""
+            if row.is_delivery_no and row.delivery_no:
+                lines.append(
+                    f"- 订单号 **{row.waybill_no}** → 跟踪号 **{row.delivery_no}**{mode}"
+                )
+            else:
+                lines.append(f"- 订单号 **{row.waybill_no}**：暂无跟踪号{mode}")
+        return "\n".join(lines)

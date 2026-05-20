@@ -33,8 +33,9 @@
 | `BY56_BYKEY` | 分配的 ByKey（与 `BY56_APP_ID` 二选一，代码优先 BYKEY） |
 | `BY56_APP_SECRET` | 签名密钥（参与签名时转大写） |
 | `BY56_CALLS` | 调用来源，默认 `byapi` |
-| `BY56_METHOD_COMMODITY` | §3.6 method，默认 `By56CustomerAPI.byPackOrder.PackOrder.QueryBatch` |
-| `BY56_METHOD_QUOTE` | §3.7 method，默认 `By56CustomerAPI.byPackOrder.PackOrder.GetDeliveryNO` **【请按 open.by56 接口详细核对】** |
+| `BY56_METHOD_COMMODITY` | §3.6 货物种类，默认 `...GetCommodityEXP` |
+| `BY56_METHOD_DELIVERY_NO` | §3.7 跟踪号，默认 `...GetDeliveryNO` |
+| `BY56_METHOD_QUOTE` | 查价 method（**非 §3.7**，待填写） |
 | `BY56_TIMEOUT_SECONDS` | HTTP 超时，默认 30 |
 
 ---
@@ -310,32 +311,65 @@ bykey=FD981D0B-...&method=By56CustomerAPI.byExpOrder.ExpOrder.QueryPriceEXP&time
 
 **响应 Data**：货物种类列表，用于映射 `CommodityID`（代码按名称模糊匹配「普货」等）。
 
-### 3.7 快递查价（QueryPriceEXP）
+### 3.7 获取百运跟踪号（GetDeliveryNO）
 
 | 项 | 值 |
 |----|-----|
-| method（默认，**请核对官方文档编号 3.7 的 method 全名**） | `By56CustomerAPI.byExpOrder.ExpOrder.QueryPriceEXP` |
-| 环境变量 | `BY56_METHOD_QUOTE` |
-| 代码 | `By56Adapter.quote()` → `query_price_exp()` |
+| method | `By56CustomerAPI.byPackOrder.PackOrder.GetDeliveryNO` |
+| 环境变量 | `BY56_METHOD_DELIVERY_NO` |
+| 代码 | `By56Adapter.get_delivery_no()` / `track_service.query_delivery_no()` |
 
-**业务请求参数**（代码映射 `BY56_QUOTE_FIELD_MAP`，请按 §3.7 修正）：
+**业务请求参数**（[open.by56 接口详细 §3.7](https://open.by56.com/apicus/#/common/preface)）：
 
-| 内部字段 | BY56 字段（当前实现） | 必填 | 说明 |
-|----------|----------------------|------|------|
-| `origin_city` | `StartCity` | Y | 起运城市 **【待确认】** |
-| `destination_country` | `DestCountry` | Y | 目的国 **【待确认】** |
-| `destination_city` | `DestCity` | N | 目的城市 **【待确认】** |
-| `weight_kg` | `Weight` | Y | 重量 kg **【待确认】** |
-| `volume_cbm` | `Volume` | N | 体积 **【待确认】** |
-| `pieces` | `Quantity` | N | 件数 **【待确认】** |
-| `goods_type` / commodity_id | `CommodityID` | N | 可先 §3.6 解析 **【待确认】** |
-| `origin_country` | `StartCountry` | N | **【待确认】** |
+| BY56 字段 | 类型 | 必填 | 说明 |
+|-----------|------|------|------|
+| `WaybillNO` | string | Y | 订单号；**多个单号用英文逗号 `,` 拼接** |
+| `WaybillType` | int | Y | 业务类型：`1` = 快递和专线；`20` = FBA |
 
-**响应 Data**：渠道/价格列表；解析字段见 `by56.py` 中 `_NAME_KEYS` / `_PRICE_KEYS` 等 **【待按 §3.7 响应表补全】**。
+**响应示例（`ResultCode=0`）：**
+
+```json
+{
+  "ResultCode": 0,
+  "Message": "",
+  "Data": [
+    {
+      "WaybillNO": "WE01711001841",
+      "IsDeliveryNO": true,
+      "DeliveryNO": "7419577196",
+      "ModeCode": "",
+      "BaseModeCode": ""
+    }
+  ]
+}
+```
+
+**Data[] 字段说明：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `WaybillNO` | string | 订单号 |
+| `IsDeliveryNO` | bool | 是否有跟踪号 |
+| `DeliveryNO` | string | 跟踪号（`IsDeliveryNO=false` 时可能为空） |
+| `ModeCode` | string | 运输方式子类 |
+| `BaseModeCode` | string | 运输方式大类 |
+
+代码：`DeliveryNoItem` / `_parse_delivery_row()` in `by56.py`。
+
+**联调：**
+
+```bash
+python scripts/test_by56_delivery_no.py ORDER001 ORDER002 --waybill-type 1
+python scripts/test_by56_delivery_no.py FBAORDER001 --waybill-type 20
+```
+
+### 3.x 快递查价（待对接）
+
+查价 **不是 §3.7**。请在 open.by56 找到查价接口编号与 method 后配置 `BY56_METHOD_QUOTE`，并实现 `BY56_QUOTE_FIELD_MAP`（见 `by56.py`）。
 
 ---
 
-## 4. 请求参数表（汇总，与 §3.7 同步）
+## 4. 请求参数表（查价汇总，与查价接口同步，非 §3.7）
 
 | 内部字段（DTO） | BY56 字段名 | 类型 | 必填 | 说明 / 枚举 |
 |-----------------|-------------|------|------|-------------|
@@ -372,7 +406,7 @@ bykey=FD981D0B-...&method=By56CustomerAPI.byExpOrder.ExpOrder.QueryPriceEXP&time
 |---------------|-----------------|------|------|
 | `ResultCode` | — | int | **0=成功** |
 | `Message` | `error_message` | string | 失败说明 |
-| `Data` | `offers[]` 来源 | object/array | §3.7 渠道列表 **【待确认路径】** |
+| `Data` | `offers[]` 来源 | object/array | 查价渠道列表 **【待确认路径】** |
 | `channels[].channelName` | `offers[].channel_name` | string | 渠道名称 **【待确认】** |
 | `channels[].totalPrice` | `offers[].total_price` | number | 总价（含税与否）**【待确认】** |
 | `channels[].currency` | `offers[].currency` | string | 币种 **【待确认】** |
@@ -413,11 +447,10 @@ bykey=FD981D0B-...&method=By56CustomerAPI.byExpOrder.ExpOrder.QueryPriceEXP&time
 | DTO | `src/aiqyweixin/models/dto.py` |
 | 联调脚本 | `scripts/test_by56_quote.py` |
 
-修改本文 **§3.6 / §3.7** 后，请同步修改：
+修改本文后请同步：
 
-- `adapters/by56_client.py`（签名、公共参数）
-- `adapters/by56.py` 中 `BY56_QUOTE_FIELD_MAP`、`_NAME_KEYS` / `_PRICE_KEYS`
-- `.env` 中 `BY56_METHOD_COMMODITY` / `BY56_METHOD_QUOTE`（与官方 method 全名一致）
+- §3.6/§3.7：`by56_client.py`、`by56.py`、`BY56_METHOD_COMMODITY` / `BY56_METHOD_DELIVERY_NO`
+- 查价（另接口）：`BY56_METHOD_QUOTE`、`BY56_QUOTE_FIELD_MAP`
 
 ---
 
