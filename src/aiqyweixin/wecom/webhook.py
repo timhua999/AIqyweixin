@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import sys
@@ -32,32 +33,44 @@ def _trace(msg: str) -> None:
     """写入 stderr，避免被 Uvicorn 日志配置挡住（部署排查用）。"""
     print(f"[aiqyweixin] {msg}", file=sys.stderr, flush=True)
 
-# 仅在主动回复成功后才记录，避免首次失败 + 企微重试时被误判为已处理
+# 同一 msgid 只处理一次（企微可能重试/并发回调，避免多次调 LLM、多次抢 response_url）
 _replied_msgids: set[str] = set()
-_MAX_REPLIED_MSGIDS = 5000
+_inflight_msgids: set[str] = set()
+_max_msgid_cache = 5000
+_webhook_lock = asyncio.Lock()
 
 
-def _already_replied(msgid: str) -> bool:
-    return bool(msgid) and msgid in _replied_msgids
+def _already_handled(msgid: str) -> bool:
+    return bool(msgid) and (msgid in _replied_msgids or msgid in _inflight_msgids)
+
+
+def _mark_inflight(msgid: str) -> None:
+    if not msgid:
+        return
+    _inflight_msgids.add(msgid)
+    if len(_inflight_msgids) > _max_msgid_cache:
+        _inflight_msgids.clear()
 
 
 def _mark_replied(msgid: str) -> None:
     if not msgid:
         return
+    _inflight_msgids.discard(msgid)
     _replied_msgids.add(msgid)
-    if len(_replied_msgids) > _MAX_REPLIED_MSGIDS:
+    if len(_replied_msgids) > _max_msgid_cache:
         _replied_msgids.clear()
 
 
+def _clear_inflight(msgid: str) -> None:
+    if msgid:
+        _inflight_msgids.discard(msgid)
+
+
 async def _send_auto_reply(response_url: str, content: str, msgid: str) -> None:
-    try:
-        await post_active_reply(response_url, content)
-        _mark_replied(msgid)
-        logger.info("企微主动回复成功 msgid=%s", msgid or "(none)")
-        _trace(f"主动回复成功 msgid={msgid or '(none)'}")
-    except Exception as exc:
-        logger.exception("企微主动回复失败 msgid=%s（企微重试时可再次尝试）", msgid or "(none)")
-        _trace(f"主动回复失败 msgid={msgid or '(none)'}: {exc}")
+    await post_active_reply(response_url, content)
+    _mark_replied(msgid)
+    logger.info("企微主动回复成功 msgid=%s 字符数=%s", msgid or "(none)", len(content))
+    _trace(f"主动回复成功 msgid={msgid or '(none)'} 字符数={len(content)}")
 
 
 def _require_wecom_crypto_settings():
@@ -163,10 +176,6 @@ async def wecom_callback_message(
 
     msgid = str(payload.get("msgid") or "")
     msgtype = payload.get("msgtype")
-    if _already_replied(msgid):
-        logger.info("该 msgid 已成功回复过，跳过: %s", msgid)
-        _trace(f"msgid 已回复过，跳过: {msgid}")
-        return Response(content="success", media_type="text/plain; charset=utf-8")
 
     if not should_reply(payload):
         logger.info(
@@ -178,17 +187,29 @@ async def wecom_callback_message(
         _trace(f"跳过回复 msgtype={msgtype} response_url={has_url}")
         return Response(content="success", media_type="text/plain; charset=utf-8")
 
+    async with _webhook_lock:
+        if _already_handled(msgid):
+            logger.info("msgid 已处理或处理中，跳过: %s", msgid)
+            _trace(f"msgid 已处理或处理中，跳过: {msgid}")
+            return Response(content="success", media_type="text/plain; charset=utf-8")
+        _mark_inflight(msgid)
+
     response_url = str(payload["response_url"]).strip()
     user_text = extract_user_text(payload)
-    _trace(f"开始生成回复 msgid={msgid} msgtype={msgtype}")
-    reply_content = await build_wecom_reply(user_text)
-    logger.info(
-        "开始主动回复 msgid=%s msgtype=%s 预览=%s",
-        msgid or "(none)",
-        msgtype,
-        reply_content[:80],
-    )
-    _trace(f"开始主动回复 msgid={msgid} 预览={reply_content[:60]}")
-    await _send_auto_reply(response_url, reply_content, msgid)
+    try:
+        _trace(f"开始生成回复 msgid={msgid} msgtype={msgtype}")
+        reply_content = await build_wecom_reply(user_text)
+        logger.info(
+            "LLM/回复就绪 msgid=%s msgtype=%s 字符数=%s 日志预览(非全文)=%s",
+            msgid or "(none)",
+            msgtype,
+            len(reply_content),
+            reply_content[:80],
+        )
+        await _send_auto_reply(response_url, reply_content, msgid)
+    except Exception as exc:
+        _clear_inflight(msgid)
+        logger.exception("企微回复流程失败 msgid=%s", msgid or "(none)")
+        _trace(f"回复失败 msgid={msgid}: {exc}")
 
     return Response(content="success", media_type="text/plain; charset=utf-8")

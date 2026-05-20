@@ -43,8 +43,15 @@ async def build_wecom_reply(user_text: str | None) -> str:
         return _template_reply(user_text)
 
     try:
-        reply = await get_llm_client().chat(text)
-        logger.info("LLM 回复成功，长度=%s", len(reply))
+        result = await get_llm_client().chat(text)
+        reply = result.content
+        if result.finish_reason == "length":
+            reply += "\n\n（回复较长，若未看全可追问「继续」或调大 LLM_MAX_TOKENS）"
+        logger.info(
+            "LLM 回复成功 字符数=%s finish_reason=%s",
+            len(reply),
+            result.finish_reason or "stop",
+        )
         return reply
     except LlmNotConfiguredError:
         return _template_reply(user_text)
