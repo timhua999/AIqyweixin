@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 _CN_TZ = ZoneInfo("Asia/Shanghai")
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x0c\x0e-\x1f]")
+# 文档 C# 样例（用于检测 BYKEY / APP_SECRET 填反）
+_DOC_SAMPLE_BYKEY = "FD981D0B-BC8B-4A55-ABD0-C571B51B4990"
+_DOC_SAMPLE_SECRET = "028D0512-E130-4EB3-8583-BE7F53FF7085"
 
 
 class By56ApiError(Exception):
@@ -48,7 +51,13 @@ def create_sign(params: dict[str, str], secret: str) -> str:
 
 
 def _now_timestamp() -> str:
+    """百运要求 GMT+8：yyyy-MM-dd HH:mm:ss（中间为空格，不是 ISO 的 T）。"""
     return datetime.now(_CN_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+
+_SYSTEM_PARAM_KEYS = frozenset(
+    {"bykey", "method", "timestamp", "calls", "format", "sign_method", "sign"}
+)
 
 
 class By56RouterClient:
@@ -64,6 +73,19 @@ class By56RouterClient:
         self.method_commodity = (s.by56_method_commodity or "").strip()
         self.method_delivery_no = (s.by56_method_delivery_no or "").strip()
         self.method_quote = (s.by56_method_quote or "").strip()
+        self._warn_credential_swap()
+
+    def _warn_credential_swap(self) -> None:
+        bk = self._bykey.upper()
+        sec = self._secret.upper()
+        if bk == _DOC_SAMPLE_SECRET and sec == _DOC_SAMPLE_BYKEY:
+            logger.warning(
+                "BY56_BYKEY 与 BY56_APP_SECRET 很可能填反了（与文档 C# 样例对调）"
+            )
+        elif bk == _DOC_SAMPLE_SECRET:
+            logger.warning(
+                "BY56_BYKEY 与文档样例中的 appSecret 相同，请确认未把签名密钥填进 BY56_BYKEY"
+            )
 
     @property
     def is_configured(self) -> bool:
@@ -96,9 +118,19 @@ class By56RouterClient:
             biz[str(k)] = str(v)
 
         params = {**self._system_params(method), **biz}
+        if "T" in params.get("timestamp", "") and " " not in params["timestamp"]:
+            raise By56ApiError(
+                "timestamp 须为 yyyy-MM-dd HH:mm:ss（空格分隔），勿用 ISO 格式带 T"
+            )
         params["sign"] = create_sign(params, self._secret)
 
-        logger.info("BY56 call method=%s", method)
+        biz_keys = sorted(k for k in params if k not in _SYSTEM_PARAM_KEYS)
+        logger.info(
+            "BY56 call method=%s bykey=%s... biz_keys=%s",
+            method,
+            (self._bykey[:8] + "…") if len(self._bykey) > 8 else self._bykey,
+            biz_keys or "(无业务参数)",
+        )
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.post(
                 self._url,
