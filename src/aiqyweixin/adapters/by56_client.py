@@ -148,10 +148,11 @@ class By56RouterClient:
         return payload
 
     async def get_commodity_exp(self, business: dict[str, Any] | None = None) -> Any:
-        """§3.6 获取货物种类（默认 method=GetCommodityEXP，可在 .env 覆盖）。"""
-        if not self.method_commodity:
-            raise By56ApiError("未配置 BY56_METHOD_COMMODITY（§3.6）")
-        return await self.call_ok(self.method_commodity, business)
+        """§3.1 快递查价 GetCommodityEXP（与 method_quote 默认同 method）。"""
+        method = self.method_quote or self.method_commodity
+        if not method:
+            raise By56ApiError("未配置 BY56_METHOD_QUOTE / BY56_METHOD_COMMODITY（§3.1）")
+        return await self.call_ok(method, business)
 
     async def get_delivery_no(self, business: dict[str, Any] | None = None) -> Any:
         """§3.7 获取百运跟踪号 GetDeliveryNO。"""
@@ -160,7 +161,8 @@ class By56RouterClient:
         return await self.call_ok(self.method_delivery_no, business)
 
     async def query_price_exp(self, business: dict[str, Any] | None = None) -> Any:
-        """查价（method 见 BY56_METHOD_QUOTE，与 §3.7 无关）。"""
-        if not self.method_quote:
-            raise By56ApiError("未配置 BY56_METHOD_QUOTE（查价接口）")
-        return await self.call_ok(self.method_quote, business)
+        """§3.1 快递查价（BY56_METHOD_QUOTE，与 §3.7 无关）。"""
+        method = self.method_quote or self.method_commodity
+        if not method:
+            raise By56ApiError("未配置 BY56_METHOD_QUOTE（§3.1 GetCommodityEXP）")
+        return await self.call_ok(method, business)

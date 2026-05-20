@@ -2,7 +2,7 @@
 百运（by56.com）适配器。
 
 - §3.1/§3.2：by56_client 公共请求与响应
-- §3.6：GetCommodityEXP 货物种类
+- §3.1 快递查价：GetCommodityEXP（StartCityKey / CountryKey / Weight 等）
 - §3.7：GetDeliveryNO 获取跟踪号（非查价）
 
 官方文档：https://open.by56.com/apicus/#/common/preface
@@ -29,24 +29,63 @@ from aiqyweixin.models.dto import (
 
 logger = logging.getLogger(__name__)
 
-# 查价字段映射（待 open.by56 查价接口文档补全后使用）
+# §3.1 快递查价 GetCommodityEXP：内部 DTO 字段 → 百运业务参数
 BY56_QUOTE_FIELD_MAP: dict[str, str] = {
-    "origin_city": "StartCity",
-    "destination_country": "DestCountry",
-    "destination_city": "DestCity",
+    "origin_city": "StartCityKey",
+    "destination_country": "CountryKey",
     "weight_kg": "Weight",
     "volume_cbm": "Volume",
-    "pieces": "Quantity",
-    "goods_type_id": "CommodityID",
-    "origin_country": "StartCountry",
+    "pieces": "Quanlity",
+    "goods_type_id": "SpecialItems",
+    "transport_mode": "ModeCode",
 }
 
-_LIST_KEYS = ("ChannelList", "channels", "list", "List", "Items", "PriceList")
+# 文档枚举：货物种类 ID（SpecialItems，可多 ID 英文逗号分隔）
+BY56_SPECIAL_ITEMS: dict[str, str] = {
+    "普货": "139",
+    "内置电池": "108",
+    "配套电池": "109",
+    "移动电源": "111",
+    "纯电池": "103",
+    "手机 (无电)": "110",
+    "手机 (内电)": "204",
+    "手机 (配电)": "205",
+    "电子烟": "105",
+    "电容": "203",
+    "纺织品": "106",
+    "木箱": "107",
+    "食品": "296",
+    "防疫物资": "308",
+    "电子产品": "320",
+}
+
+# extra 中可直接透传的百运字段名
+BY56_QUOTE_PASSTHROUGH_KEYS: frozenset[str] = frozenset(
+    {
+        "StartCityKey",
+        "CountryKey",
+        "Weight",
+        "Volume",
+        "SpecialItems",
+        "ModeCode",
+        "PackgeType",
+        "ChannelNames",
+        "ChannelCodes",
+        "QueryType",
+        "Quanlity",
+        "GoodInfos",
+    }
+)
+
+_DEFAULT_START_CITY = "深圳市"
+_DEFAULT_PACKGE_TYPE = 1  # 1=WPX, 2=DOC, 3=PAK
+
+_LIST_KEYS = ("ChannelList", "channels", "list", "List", "Items", "PriceList", "Data")
 _NAME_KEYS = ("ChannelName", "channelName", "ModeName", "ProductName", "Name")
 _PRICE_KEYS = ("TotalPrice", "totalPrice", "Price", "price", "Amount", "Freight", "TotalFee")
 _CURRENCY_KEYS = ("Currency", "currency", "CurrencyCode")
-_TIME_KEYS = ("TransitTime", "transitTime", "WorkDays", "Days", "Aging")
-_WEIGHT_KEYS = ("ChargeWeight", "chargeWeight", "BillWeight", "Weight")
+_TIME_KEYS = ("Period", "TransitTime", "transitTime", "WorkDays", "Days", "Aging")
+_WEIGHT_KEYS = ("CharWeight", "ChargeWeight", "chargeWeight", "BillWeight")
 
 def _parse_bool(val: Any) -> bool:
     if isinstance(val, bool):
@@ -152,9 +191,8 @@ class By56Adapter(LogisticsAdapter):
         return self._client.is_configured
 
     async def list_commodities(self) -> list[dict[str, Any]]:
-        """§3.6 获取货物种类列表。"""
-        data = await self._client.get_commodity_exp()
-        return _unwrap_list(data)
+        """§3.1 文档枚举的货物种类（SpecialItems ID），非独立列表接口。"""
+        return [{"id": vid, "name": name} for name, vid in BY56_SPECIAL_ITEMS.items()]
 
     async def get_delivery_no(self, request: DeliveryNoRequest) -> DeliveryNoResult:
         """§3.7 获取百运跟踪号。"""
@@ -199,43 +237,63 @@ class By56Adapter(LogisticsAdapter):
         items = _parse_delivery_items(data)
         return DeliveryNoResult(success=True, items=items, raw_response=data)
 
+    def _resolve_special_items(self, goods_type: str | None, extra: dict[str, Any] | None) -> str | None:
+        if extra:
+            for key in ("SpecialItems", "special_items", "commodity_id", "goods_type_id"):
+                val = extra.get(key)
+                if val is not None and str(val).strip():
+                    return str(val).strip()
+        if not goods_type or not str(goods_type).strip():
+            return None
+        text = str(goods_type).strip()
+        if text.isdigit() or ("," in text and all(p.strip().isdigit() for p in text.split(","))):
+            return text
+        if text in BY56_SPECIAL_ITEMS:
+            return BY56_SPECIAL_ITEMS[text]
+        for name, vid in BY56_SPECIAL_ITEMS.items():
+            if name in text or text in name:
+                return vid
+        return None
+
     def _build_quote_business(self, request: QuoteRequest) -> dict[str, str]:
+        extra = request.extra or {}
         internal: dict[str, Any] = {
-            "origin_city": request.origin_city,
-            "origin_country": request.origin_country,
+            "origin_city": request.origin_city or extra.get("origin_city") or _DEFAULT_START_CITY,
             "destination_country": request.destination_country,
-            "destination_city": request.destination_city,
             "weight_kg": request.weight_kg,
-            "volume_cbm": request.volume_cbm,
+            "volume_cbm": request.volume_cbm if request.volume_cbm is not None else extra.get("volume", 0),
             "pieces": request.pieces,
-            "goods_type_id": request.extra.get("commodity_id") if request.extra else None,
+            "goods_type_id": self._resolve_special_items(request.goods_type, extra),
+            "transport_mode": request.transport_mode,
         }
-        internal.update(request.extra or {})
         biz: dict[str, str] = {}
         for inner_key, by56_key in BY56_QUOTE_FIELD_MAP.items():
             val = internal.get(inner_key)
             if val is not None and val != "":
                 biz[by56_key] = str(val)
+
+        packge = extra.get("PackgeType", extra.get("packge_type", _DEFAULT_PACKGE_TYPE))
+        biz.setdefault("PackgeType", str(packge))
+
+        for key in BY56_QUOTE_PASSTHROUGH_KEYS:
+            if key in extra and extra[key] is not None and str(extra[key]).strip() != "":
+                biz[key] = str(extra[key])
         return biz
 
-    async def _resolve_commodity_id_async(self, goods_type: str | None) -> str | None:
-        if not goods_type or not str(goods_type).strip():
-            return None
-        text = str(goods_type).strip()
-        if text.isdigit():
-            return text
-        if not self._client.method_commodity:
-            return None
-        try:
-            data = await self._client.get_commodity_exp()
-        except By56ApiError:
-            logger.warning("§3.6 获取货物种类失败，跳过 CommodityID 映射")
-            return None
-        for row in _unwrap_list(data):
-            name = _first_key(row, ("Name", "name", "CommodityName", "GoodsName"))
-            cid = _first_key(row, ("ID", "Id", "id", "CommodityID", "CommodityId"))
-            if name and cid and text in str(name):
-                return str(cid)
+    def _validate_quote_business(self, biz: dict[str, str]) -> str | None:
+        if not biz.get("StartCityKey"):
+            return "缺少起运城市 StartCityKey"
+        country = (biz.get("CountryKey") or "").strip()
+        if len(country) != 2:
+            return "CountryKey 须为目的地国家二字码（如 US、GB）"
+        if not biz.get("Weight"):
+            return "缺少重量 Weight"
+        if biz.get("Volume") is None:
+            return "缺少体积 Volume"
+        if not biz.get("SpecialItems"):
+            return "缺少货物种类 SpecialItems（ID 或中文如「普货」）"
+        if not biz.get("PackgeType"):
+            return "缺少包裹类型 PackgeType（1=WPX，2=DOC，3=PAK）"
         return None
 
     async def quote(self, request: QuoteRequest) -> QuoteResult:
@@ -245,21 +303,21 @@ class By56Adapter(LogisticsAdapter):
                 error_code="BY56_NOT_CONFIGURED",
                 error_message="未配置 BY56_BASE_URL / BY56_BYKEY / BY56_APP_SECRET",
             )
-        if not self._client.method_quote:
+        method = self._client.method_quote or self._client.method_commodity
+        if not method:
             return QuoteResult(
                 success=False,
                 error_code="BY56_QUOTE_NOT_CONFIGURED",
-                error_message="未配置 BY56_METHOD_QUOTE；§3.7 为 GetDeliveryNO 跟踪号接口，请用 get_delivery_no",
+                error_message="未配置 BY56_METHOD_QUOTE（§3.1 GetCommodityEXP 快递查价）",
             )
 
         biz = self._build_quote_business(request)
-        if request.goods_type and "CommodityID" not in biz:
-            cid = await self._resolve_commodity_id_async(request.goods_type)
-            if cid:
-                biz["CommodityID"] = cid
+        err = self._validate_quote_business(biz)
+        if err:
+            return QuoteResult(success=False, error_code="INVALID_PARAM", error_message=err)
 
         try:
-            data = await self._client.query_price_exp(biz)
+            data = await self._client.call_ok(method, biz)
         except By56ApiError as exc:
             logger.exception("BY56 查价失败")
             return QuoteResult(
@@ -274,7 +332,7 @@ class By56Adapter(LogisticsAdapter):
             return QuoteResult(
                 success=True,
                 offers=[],
-                error_message="查价成功但未解析到渠道列表，请核对响应字段或 BY56_QUOTE_FIELD_MAP",
+                error_message="查价成功但未解析到渠道列表，请核对 Data 是否为渠道数组",
                 raw_response=data if isinstance(data, dict) else {"Data": data},
             )
         return QuoteResult(

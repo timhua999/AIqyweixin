@@ -20,7 +20,7 @@ def by56_quote_enabled() -> bool:
 
 
 async def list_by56_commodities() -> list[dict[str, object]]:
-    """§3.6 货物种类列表。"""
+    """§3.1 文档枚举的 SpecialItems 货物种类。"""
     from aiqyweixin.adapters.by56 import By56Adapter
 
     adapter = By56Adapter()

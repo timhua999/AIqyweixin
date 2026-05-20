@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""百运查价联调（§3.6 货物种类；查价需配置 BY56_METHOD_QUOTE）。§3.7 跟踪号请用 test_by56_delivery_no.py。"""
+"""百运 §3.1 快递查价联调（GetCommodityEXP）。§3.7 跟踪号请用 test_by56_delivery_no.py。"""
 
 from __future__ import annotations
 
@@ -15,14 +15,15 @@ from aiqyweixin.services.quote_service import by56_quote_enabled, list_by56_comm
 
 async def _main() -> int:
     parser = argparse.ArgumentParser(description="百运 API 联调")
-    parser.add_argument("--list-commodity", action="store_true", help="仅调用 §3.6 获取货物种类")
-    parser.add_argument("--origin-country", default="CN")
-    parser.add_argument("--origin-city", default="深圳")
-    parser.add_argument("--dest-country", default="US")
-    parser.add_argument("--dest-city", default="洛杉矶")
+    parser.add_argument("--list-commodity", action="store_true", help="列出 §3.1 SpecialItems 货物种类 ID")
+    parser.add_argument("--origin-country", default="CN", help="内部 DTO，查价 API 不使用")
+    parser.add_argument("--origin-city", default="深圳市", help="对应 StartCityKey")
+    parser.add_argument("--dest-country", default="US", help="CountryKey 二字码")
+    parser.add_argument("--volume", type=float, default=0.0, help="Volume 必填")
     parser.add_argument("--weight-kg", type=float, default=100.0)
-    parser.add_argument("--goods-type", default="普货")
-    parser.add_argument("--commodity-id", default=None, help="§3.7 直接传 CommodityID")
+    parser.add_argument("--goods-type", default="普货", help="映射为 SpecialItems，如 139 或 普货")
+    parser.add_argument("--packge-type", type=int, default=1, choices=[1, 2, 3], help="1=WPX 2=DOC 3=PAK")
+    parser.add_argument("--special-items", default=None, help="直接传 SpecialItems，如 139 或 139,108")
     args = parser.parse_args()
 
     if not by56_quote_enabled():
@@ -39,16 +40,16 @@ async def _main() -> int:
         print(json.dumps(rows, ensure_ascii=False, indent=2)[:4000])
         return 0
 
-    extra = {}
-    if args.commodity_id:
-        extra["commodity_id"] = args.commodity_id
+    extra: dict = {"PackgeType": args.packge_type}
+    if args.special_items:
+        extra["SpecialItems"] = args.special_items
 
     req = QuoteRequest(
         origin_country=args.origin_country,
         origin_city=args.origin_city,
         destination_country=args.dest_country,
-        destination_city=args.dest_city,
         weight_kg=args.weight_kg,
+        volume_cbm=args.volume,
         goods_type=args.goods_type,
         extra=extra,
     )

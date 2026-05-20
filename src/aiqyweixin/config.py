@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     by56_app_id: str | None = Field(default=None, validation_alias=AliasChoices("BY56_APP_ID"))
     by56_app_secret: str | None = Field(default=None, validation_alias=AliasChoices("BY56_APP_SECRET"))
     by56_calls: str = Field(default="byapi", validation_alias=AliasChoices("BY56_CALLS"))
+    # 与 §3.1 查价同 method；保留别名便于旧 .env
     by56_method_commodity: str | None = Field(
         default="By56CustomerAPI.byExpOrder.ExpOrder.GetCommodityEXP",
         validation_alias=AliasChoices("BY56_METHOD_COMMODITY"),
@@ -84,9 +85,9 @@ class Settings(BaseSettings):
         default="By56CustomerAPI.byPackOrder.PackOrder.GetDeliveryNO",
         validation_alias=AliasChoices("BY56_METHOD_DELIVERY_NO"),
     )
-    # 查价 method（非 §3.7；待 open.by56 查价接口编号确认后填写）
+    # §3.1 快递查价 GetCommodityEXP（非 §3.7）
     by56_method_quote: str | None = Field(
-        default=None,
+        default="By56CustomerAPI.byExpOrder.ExpOrder.GetCommodityEXP",
         validation_alias=AliasChoices("BY56_METHOD_QUOTE"),
     )
     by56_timeout_seconds: float = Field(
