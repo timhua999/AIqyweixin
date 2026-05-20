@@ -28,7 +28,10 @@ async def lifespan(_app: FastAPI):
     configure_logging(settings.log_level)
     import sys
 
-    msg = f"aiqyweixin 已启动（企微自动回复已启用，LOG_LEVEL={settings.log_level}）"
+    from aiqyweixin.orchestrator.chat import llm_is_enabled
+
+    llm_on = "on" if llm_is_enabled() else "off(模板回复)"
+    msg = f"aiqyweixin 已启动（企微自动回复已启用，LLM={llm_on}，LOG_LEVEL={settings.log_level}）"
     logger.info(msg)
     print(f"[aiqyweixin] {msg}", file=sys.stderr, flush=True)
     if settings.database_url:

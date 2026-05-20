@@ -51,11 +51,15 @@ class Settings(BaseSettings):
     # 主动回复文案；含 {content} 时替换为用户消息摘要。
     wecom_reply_text: str | None = Field(default=None, validation_alias=AliasChoices("WECOM_REPLY_TEXT"))
 
+    llm_enabled: bool = Field(default=True, validation_alias=AliasChoices("LLM_ENABLED"))
     llm_base_url: str | None = Field(default=None, validation_alias=AliasChoices("LLM_BASE_URL"))
     llm_api_key: str | None = Field(default=None, validation_alias=AliasChoices("LLM_API_KEY"))
     llm_model: str | None = Field(default=None, validation_alias=AliasChoices("LLM_MODEL"))
     llm_temperature: float = Field(default=0.2, validation_alias=AliasChoices("LLM_TEMPERATURE"))
     llm_max_tokens: int = Field(default=1024, validation_alias=AliasChoices("LLM_MAX_TOKENS"))
+    llm_timeout_seconds: float = Field(default=60.0, validation_alias=AliasChoices("LLM_TIMEOUT_SECONDS"))
+    # 留空则使用代码内默认国际物流助手提示词
+    llm_system_prompt: str | None = Field(default=None, validation_alias=AliasChoices("LLM_SYSTEM_PROMPT"))
 
     enable_debug_routes: bool = Field(
         default=False,

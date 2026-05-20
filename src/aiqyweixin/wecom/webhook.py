@@ -11,7 +11,8 @@ import sys
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from aiqyweixin.config import get_settings
-from aiqyweixin.wecom.messages import extract_user_text, format_reply_text, should_reply
+from aiqyweixin.orchestrator.chat import build_wecom_reply
+from aiqyweixin.wecom.messages import extract_user_text, should_reply
 from aiqyweixin.wecom.reply import post_active_reply
 from aiqyweixin.wecom.vendor.callback_json_python3 import ierror
 from aiqyweixin.wecom.wxcrypt import (
@@ -31,7 +32,6 @@ def _trace(msg: str) -> None:
     """写入 stderr，避免被 Uvicorn 日志配置挡住（部署排查用）。"""
     print(f"[aiqyweixin] {msg}", file=sys.stderr, flush=True)
 
-_DEFAULT_REPLY_TEMPLATE = "已收到您的消息：{content}"
 # 仅在主动回复成功后才记录，避免首次失败 + 企微重试时被误判为已处理
 _replied_msgids: set[str] = set()
 _MAX_REPLIED_MSGIDS = 5000
@@ -47,11 +47,6 @@ def _mark_replied(msgid: str) -> None:
     _replied_msgids.add(msgid)
     if len(_replied_msgids) > _MAX_REPLIED_MSGIDS:
         _replied_msgids.clear()
-
-
-def _reply_template() -> str:
-    custom = (get_settings().wecom_reply_text or "").strip()
-    return custom or _DEFAULT_REPLY_TEMPLATE
 
 
 async def _send_auto_reply(response_url: str, content: str, msgid: str) -> None:
@@ -185,14 +180,15 @@ async def wecom_callback_message(
 
     response_url = str(payload["response_url"]).strip()
     user_text = extract_user_text(payload)
-    reply_content = format_reply_text(user_text, _reply_template())
+    _trace(f"开始生成回复 msgid={msgid} msgtype={msgtype}")
+    reply_content = await build_wecom_reply(user_text)
     logger.info(
         "开始主动回复 msgid=%s msgtype=%s 预览=%s",
         msgid or "(none)",
         msgtype,
         reply_content[:80],
     )
-    _trace(f"开始主动回复 msgid={msgid} msgtype={msgtype}")
+    _trace(f"开始主动回复 msgid={msgid} 预览={reply_content[:60]}")
     await _send_auto_reply(response_url, reply_content, msgid)
 
     return Response(content="success", media_type="text/plain; charset=utf-8")

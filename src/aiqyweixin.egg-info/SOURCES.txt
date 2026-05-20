@@ -26,6 +26,7 @@ src/aiqyweixin/models/__init__.py
 src/aiqyweixin/models/db.py
 src/aiqyweixin/models/dto.py
 src/aiqyweixin/orchestrator/__init__.py
+src/aiqyweixin/orchestrator/chat.py
 src/aiqyweixin/orchestrator/policies.py
 src/aiqyweixin/orchestrator/router.py
 src/aiqyweixin/persistence/__init__.py

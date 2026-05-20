@@ -23,11 +23,13 @@ def main() -> int:
         print("httpx: NOT INSTALLED  ->  run: pip install -e .")
         return 1
 
+    from aiqyweixin.orchestrator.chat import llm_is_enabled
     from aiqyweixin.wecom import webhook
 
     print("webhook module:", webhook.__file__)
     has_trace = hasattr(webhook, "_trace")
     print("stderr trace (_trace):", "yes" if has_trace else "no (git pull 最新代码)")
+    print("llm enabled:", llm_is_enabled())
     return 0
 
 
