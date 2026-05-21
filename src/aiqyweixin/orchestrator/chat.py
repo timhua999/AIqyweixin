@@ -1,5 +1,5 @@
 """
-企微对话回复编排（MVP：单轮 LLM 问答，未接查价/轨迹 API）。
+企微对话回复编排：询价走百运 API + LLM 抽参；其它走 LLM/模板。
 """
 
 from __future__ import annotations
@@ -8,6 +8,7 @@ import logging
 
 from aiqyweixin.config import get_settings
 from aiqyweixin.llm.client import LlmError, LlmNotConfiguredError, get_llm_client
+from aiqyweixin.orchestrator.quote_flow import try_build_quote_reply
 from aiqyweixin.wecom.messages import format_reply_text
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,11 @@ async def build_wecom_reply(user_text: str | None) -> str:
     if not llm_is_enabled():
         logger.debug("LLM 未启用或未配置，使用模板回复")
         return _template_reply(user_text)
+
+    quote_reply = await try_build_quote_reply(text)
+    if quote_reply is not None:
+        logger.info("走百运询价回复 字符数=%s", len(quote_reply))
+        return quote_reply
 
     try:
         result = await get_llm_client().chat(text)

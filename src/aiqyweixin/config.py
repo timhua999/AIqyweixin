@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = Field(default=60.0, validation_alias=AliasChoices("LLM_TIMEOUT_SECONDS"))
     # 留空则使用代码内默认国际物流助手提示词
     llm_system_prompt: str | None = Field(default=None, validation_alias=AliasChoices("LLM_SYSTEM_PROMPT"))
+    # 企微询价回复最多展示渠道条数（含渠道描述/附加费/风险提示，不宜过大）
+    wecom_quote_max_offers: int = Field(
+        default=3,
+        validation_alias=AliasChoices("WECOM_QUOTE_MAX_OFFERS"),
+    )
 
     enable_debug_routes: bool = Field(
         default=False,
