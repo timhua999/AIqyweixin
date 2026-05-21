@@ -26,15 +26,43 @@ class QuoteRequest:
 
 @dataclass
 class QuoteOffer:
-    """单条渠道报价。"""
+    """单条渠道报价（§3.1 GetCommodityEXP Data[]）。"""
 
     channel_name: str
     total_price: float
     currency: str = "CNY"
     transit_time: str | None = None
     charge_weight_kg: float | None = None
+    channel_id: str | None = None
+    mode_code: str | None = None
+    unit_price: float | None = None
+    start_city: str | None = None
+    country_name: str | None = None
+    fee_total: float | None = None
+    channel_description: str | None = None
+    fee_list: list[dict[str, Any]] = field(default_factory=list)
+    risk_warning: str | None = None
+    traffic_amount: float | None = None
+    is_tax: bool | None = None
     provider: str = "by56"
     raw: dict[str, Any] = field(default_factory=dict)
+
+    def fee_lines_for_display(self) -> list[str]:
+        """附加费明细（与接口 FeeList / FeeTotal 一致，全量）。"""
+        lines: list[str] = []
+        cur = self.currency or "CNY"
+        if self.fee_total is not None:
+            lines.append(f"附加费总额：{self.fee_total} {cur}")
+        for item in self.fee_list:
+            name = item.get("FeeName")
+            price = item.get("FeePrice")
+            if name is None:
+                continue
+            if price is not None and str(price).strip() != "":
+                lines.append(f"{name}：{price} {cur}")
+            else:
+                lines.append(str(name))
+        return lines
 
 
 @dataclass
@@ -60,13 +88,30 @@ class QuoteResult:
 
         lines = ["**查价结果**（数据来源：百运 API）", ""]
         for i, offer in enumerate(self.offers[:max_offers], start=1):
-            price = offer.total_price
             cur = offer.currency or "CNY"
-            tt = f"，时效 {offer.transit_time}" if offer.transit_time else ""
-            cw = ""
+            extras: list[str] = []
+            if offer.mode_code:
+                extras.append(offer.mode_code)
+            if offer.transit_time:
+                period = offer.transit_time.strip()
+                extras.append(f"{period}天" if period.isdigit() else period)
             if offer.charge_weight_kg is not None:
-                cw = f"，计费重 {offer.charge_weight_kg}kg"
-            lines.append(f"{i}. **{offer.channel_name}**：**{price} {cur}**{tt}{cw}")
+                extras.append(f"计费重 {offer.charge_weight_kg}kg")
+            if offer.unit_price is not None:
+                extras.append(f"单价 {offer.unit_price}")
+            meta = f"（{'，'.join(extras)}）" if extras else ""
+            route = ""
+            if offer.start_city and offer.country_name:
+                route = f"{offer.start_city}→{offer.country_name} "
+            lines.append(
+                f"{i}. {route}**{offer.channel_name}**：**{offer.total_price} {cur}**{meta}"
+            )
+            if offer.channel_description:
+                lines.append(f"   - 渠道描述：{offer.channel_description}")
+            for fee_line in offer.fee_lines_for_display():
+                lines.append(f"   - {fee_line}")
+            if offer.risk_warning:
+                lines.append(f"   - 风险提示：{offer.risk_warning}")
         if len(self.offers) > max_offers:
             lines.append(f"\n… 另有 {len(self.offers) - max_offers} 条渠道未展示")
         return "\n".join(lines)

@@ -80,12 +80,14 @@ BY56_QUOTE_PASSTHROUGH_KEYS: frozenset[str] = frozenset(
 _DEFAULT_START_CITY = "深圳市"
 _DEFAULT_PACKGE_TYPE = 1  # 1=WPX, 2=DOC, 3=PAK
 
-_LIST_KEYS = ("ChannelList", "channels", "list", "List", "Items", "PriceList", "Data")
+_LIST_KEYS = ("ChannelList", "channels", "list", "List", "Items", "PriceList")
 _NAME_KEYS = ("ChannelName", "channelName", "ModeName", "ProductName", "Name")
-_PRICE_KEYS = ("TotalPrice", "totalPrice", "Price", "price", "Amount", "Freight", "TotalFee")
+_TOTAL_PRICE_KEYS = ("TotalPrice", "totalPrice", "Amount", "Freight", "TotalFee")
+_UNIT_PRICE_KEYS = ("Price", "price")
 _CURRENCY_KEYS = ("Currency", "currency", "CurrencyCode")
 _TIME_KEYS = ("Period", "TransitTime", "transitTime", "WorkDays", "Days", "Aging")
 _WEIGHT_KEYS = ("CharWeight", "ChargeWeight", "chargeWeight", "BillWeight")
+_FEE_TOTAL_KEYS = ("FeeTotal", "FeeToal", "feeTotal")
 
 def _parse_bool(val: Any) -> bool:
     if isinstance(val, bool):
@@ -146,37 +148,80 @@ def _unwrap_list(data: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _to_float(val: Any) -> float | None:
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_fee_list(raw: Any) -> list[dict[str, Any]]:
+    """保留接口 FeeList 原字段名与条目，全量入列表。"""
+    if not isinstance(raw, list):
+        return []
+    items: list[dict[str, Any]] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("FeeName")
+        if name is None or str(name).strip() == "":
+            continue
+        items.append(
+            {
+                "FeeName": str(name),
+                "FeePrice": entry.get("FeePrice"),
+            }
+        )
+    return items
+
+
+def _parse_risk_warning(raw: Any) -> str | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text if text else None
+
+
+def _parse_quote_row(row: dict[str, Any]) -> QuoteOffer | None:
+    """§3.1 查价 Data[] 单条（ChannelName / TotalPrice / Period / CharWeight 等）。"""
+    name = _first_key(row, _NAME_KEYS)
+    total = _to_float(_first_key(row, _TOTAL_PRICE_KEYS))
+    if name is None or total is None:
+        return None
+    channel = row.get("Channel")
+    return QuoteOffer(
+        channel_name=str(name),
+        total_price=total,
+        currency=str(_first_key(row, _CURRENCY_KEYS) or "CNY"),
+        transit_time=str(v) if (v := _first_key(row, _TIME_KEYS)) is not None else None,
+        charge_weight_kg=_to_float(_first_key(row, _WEIGHT_KEYS)),
+        channel_id=str(channel).strip() if channel is not None and str(channel).strip() else None,
+        mode_code=str(row["ModeCode"]).strip() if row.get("ModeCode") is not None else None,
+        unit_price=_to_float(_first_key(row, _UNIT_PRICE_KEYS)),
+        start_city=str(row["StartCityName"]).strip() if row.get("StartCityName") else None,
+        country_name=str(row["CountryName"]).strip() if row.get("CountryName") else None,
+        fee_total=_to_float(_first_key(row, _FEE_TOTAL_KEYS)),
+        channel_description=_parse_risk_warning(row.get("ChannelDescription")),
+        fee_list=_parse_fee_list(row.get("FeeList")),
+        risk_warning=_parse_risk_warning(row.get("RiskWarning")),
+        traffic_amount=_to_float(row.get("TrafficAmount")),
+        is_tax=_parse_bool(row["IsTax"]) if row.get("IsTax") is not None else None,
+        provider="by56",
+        raw=row,
+    )
+
+
 def _parse_offers_from_data(data: Any) -> list[QuoteOffer]:
     offers: list[QuoteOffer] = []
     for item in _unwrap_list(data):
-        name = _first_key(item, _NAME_KEYS)
-        price = _first_key(item, _PRICE_KEYS)
-        if name is None or price is None:
+        if not isinstance(item, dict):
             continue
-        try:
-            price_f = float(price)
-        except (TypeError, ValueError):
-            continue
-        cw = _first_key(item, _WEIGHT_KEYS)
-        charge: float | None = None
-        if cw is not None:
-            try:
-                charge = float(cw)
-            except (TypeError, ValueError):
-                charge = None
-        tt = _first_key(item, _TIME_KEYS)
-        cur = _first_key(item, _CURRENCY_KEYS) or "CNY"
-        offers.append(
-            QuoteOffer(
-                channel_name=str(name),
-                total_price=price_f,
-                currency=str(cur),
-                transit_time=str(tt) if tt is not None else None,
-                charge_weight_kg=charge,
-                provider="by56",
-                raw=item,
-            )
-        )
+        offer = _parse_quote_row(item)
+        if offer:
+            offers.append(offer)
+    offers.sort(key=lambda o: o.total_price)
     return offers
 
 
