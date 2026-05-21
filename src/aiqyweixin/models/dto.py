@@ -162,7 +162,7 @@ class DeliveryNoResult:
             return f"**跟踪号查询失败**{code}\n\n{msg}"
         if not self.items:
             return "**跟踪号查询成功**，但未返回数据。"
-        lines = ["**百运跟踪号查询结果**", ""]
+        lines = ["**百运跟踪号（§3.7 GetDeliveryNO）**", ""]
         for row in self.items:
             mode_parts = [p for p in (row.base_mode_code, row.mode_code) if p]
             mode = f"（{' / '.join(mode_parts)}）" if mode_parts else ""
@@ -173,3 +173,79 @@ class DeliveryNoResult:
             else:
                 lines.append(f"- 订单号 **{row.waybill_no}**：暂无跟踪号{mode}")
         return "\n".join(lines)
+
+
+# §3.6 QueryBatch 单次最多 5 个单号
+BY56_TRACK_MAX_NUMBERS = 5
+
+
+@dataclass
+class TrackQueryRequest:
+    """§3.6 货物追踪入参。"""
+
+    track_numbers: list[str]
+
+    def track_no_param(self) -> str:
+        parts = [n.strip() for n in self.track_numbers if n and str(n).strip()]
+        return ",".join(parts[:BY56_TRACK_MAX_NUMBERS])
+
+
+@dataclass
+class GoodsTrackEvent:
+    """GoodsTrackLst 单条轨迹。"""
+
+    waybill_no: str | None = None
+    track_time: str | None = None
+    position: str | None = None
+    track_info: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class TrackShipment:
+    """§3.6 Data[] 单票。"""
+
+    waybill_no: str
+    track_status: str
+    events: list[GoodsTrackEvent] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class TrackBatchResult:
+    """§3.6 货物追踪结果。"""
+
+    success: bool
+    shipments: list[TrackShipment] = field(default_factory=list)
+    error_code: str | None = None
+    error_message: str | None = None
+    raw_response: Any = None
+
+    def to_markdown(self) -> str:
+        if not self.success:
+            msg = self.error_message or "查询失败"
+            code = f"（{self.error_code}）" if self.error_code else ""
+            return f"**货物追踪查询失败**{code}\n\n{msg}"
+        if not self.shipments:
+            return "**货物追踪查询成功**，但未返回数据。"
+        lines = ["**百运货物追踪（§3.6）**", ""]
+        for ship in self.shipments:
+            lines.append(f"### 订单号 {ship.waybill_no}")
+            lines.append(f"- 上网状态：**{ship.track_status}**")
+            if not ship.events:
+                lines.append("- 轨迹：无节点")
+            else:
+                lines.append("- 轨迹：")
+                for ev in ship.events:
+                    time_part = ev.track_time or ""
+                    pos = ev.position or ""
+                    info = ev.track_info or ""
+                    head = " | ".join(p for p in (time_part, pos) if p)
+                    if info:
+                        lines.append(f"  - {head} — {info}" if head else f"  - {info}")
+                    elif head:
+                        lines.append(f"  - {head}")
+                    else:
+                        lines.append("  - （空节点）")
+            lines.append("")
+        return "\n".join(lines).rstrip()

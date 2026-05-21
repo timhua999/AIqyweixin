@@ -79,6 +79,7 @@ class By56RouterClient:
         self._timeout = httpx.Timeout(float(s.by56_timeout_seconds), connect=10.0)
         self.method_commodity = (s.by56_method_commodity or "").strip()
         self.method_delivery_no = (s.by56_method_delivery_no or "").strip()
+        self.method_track_batch = (s.by56_method_track_batch or "").strip()
         self.method_quote = (s.by56_method_quote or "").strip()
         self._warn_credential_swap()
 
@@ -198,6 +199,12 @@ class By56RouterClient:
         if not self.method_delivery_no:
             raise By56ApiError("未配置 BY56_METHOD_DELIVERY_NO（§3.7）")
         return await self.call_ok(self.method_delivery_no, business)
+
+    async def query_track_batch(self, business: dict[str, Any] | None = None) -> Any:
+        """§3.6 货物追踪 QueryBatch。"""
+        if not self.method_track_batch:
+            raise By56ApiError("未配置 BY56_METHOD_TRACK_BATCH（§3.6）")
+        return await self.call_ok(self.method_track_batch, business)
 
     async def query_price_exp(self, business: dict[str, Any] | None = None) -> Any:
         """§3.1 快递查价（BY56_METHOD_QUOTE，与 §3.7 无关）。"""

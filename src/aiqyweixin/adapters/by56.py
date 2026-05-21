@@ -2,8 +2,9 @@
 百运（by56.com）适配器。
 
 - §3.1/§3.2：by56_client 公共请求与响应
-- §3.1 快递查价：GetCommodityEXP（StartCityKey / CountryKey / Weight 等）
-- §3.7：GetDeliveryNO 获取跟踪号（非查价）
+- §3.1 快递查价：GetCommodityEXP
+- §3.6 货物追踪：QueryBatch（TrackNo → GoodsTrackLst）
+- §3.7 获取百运跟踪号：GetDeliveryNO（订单号换跟踪号，非轨迹）
 
 官方文档：https://open.by56.com/apicus/#/common/preface
 """
@@ -22,7 +23,11 @@ from aiqyweixin.models.dto import (
     DeliveryNoItem,
     DeliveryNoRequest,
     DeliveryNoResult,
+    GoodsTrackEvent,
     QuoteOffer,
+    TrackBatchResult,
+    TrackQueryRequest,
+    TrackShipment,
     QuoteRequest,
     QuoteResult,
 )
@@ -113,6 +118,50 @@ def _parse_delivery_row(row: dict[str, Any]) -> DeliveryNoItem | None:
         base_mode_code=str(row["BaseModeCode"]).strip() if row.get("BaseModeCode") is not None else None,
         raw=row,
     )
+
+
+def _parse_goods_track_event(row: dict[str, Any]) -> GoodsTrackEvent:
+    return GoodsTrackEvent(
+        waybill_no=str(row["WaybillNo"]).strip() if row.get("WaybillNo") is not None else None,
+        track_time=str(row["TrackTime"]).strip() if row.get("TrackTime") is not None else None,
+        position=str(row["Position"]).strip() if row.get("Position") is not None else None,
+        track_info=str(row["TrackInfo"]).strip() if row.get("TrackInfo") is not None else None,
+        raw=row,
+    )
+
+
+def _parse_track_shipment(row: dict[str, Any]) -> TrackShipment | None:
+    wb = row.get("WaybillNo") or row.get("WaybillNO")
+    if wb is None or str(wb).strip() == "":
+        return None
+    status = row.get("TrackStatus")
+    events: list[GoodsTrackEvent] = []
+    lst = row.get("GoodsTrackLst")
+    if isinstance(lst, list):
+        for item in lst:
+            if isinstance(item, dict):
+                events.append(_parse_goods_track_event(item))
+    return TrackShipment(
+        waybill_no=str(wb).strip(),
+        track_status=str(status).strip() if status is not None else "",
+        events=events,
+        raw=row,
+    )
+
+
+def _parse_track_shipments(data: Any) -> list[TrackShipment]:
+    if isinstance(data, list):
+        out: list[TrackShipment] = []
+        for row in data:
+            if isinstance(row, dict):
+                ship = _parse_track_shipment(row)
+                if ship:
+                    out.append(ship)
+        return out
+    if isinstance(data, dict):
+        ship = _parse_track_shipment(data)
+        return [ship] if ship else []
+    return []
 
 
 def _parse_delivery_items(data: Any) -> list[DeliveryNoItem]:
@@ -281,6 +330,38 @@ class By56Adapter(LogisticsAdapter):
 
         items = _parse_delivery_items(data)
         return DeliveryNoResult(success=True, items=items, raw_response=data)
+
+    async def query_track_batch(self, request: TrackQueryRequest) -> TrackBatchResult:
+        """§3.6 货物追踪 QueryBatch。"""
+        if not self.is_configured:
+            return TrackBatchResult(
+                success=False,
+                error_code="BY56_NOT_CONFIGURED",
+                error_message="未配置 BY56_BASE_URL / BY56_BYKEY / BY56_APP_SECRET",
+            )
+
+        track_param = request.track_no_param()
+        if not track_param:
+            return TrackBatchResult(
+                success=False,
+                error_code="INVALID_PARAM",
+                error_message="TrackNo 不能为空（最多 5 个，英文逗号分隔）",
+            )
+
+        biz = {"TrackNo": track_param}
+        try:
+            data = await self._client.query_track_batch(biz)
+        except By56ApiError as exc:
+            logger.exception("BY56 §3.6 QueryBatch 失败")
+            return TrackBatchResult(
+                success=False,
+                error_code=str(exc.result_code) if exc.result_code is not None else "BY56_ERROR",
+                error_message=str(exc),
+                raw_response=exc.raw,
+            )
+
+        shipments = _parse_track_shipments(data)
+        return TrackBatchResult(success=True, shipments=shipments, raw_response=data)
 
     def _resolve_special_items(self, goods_type: str | None, extra: dict[str, Any] | None) -> str | None:
         if extra:

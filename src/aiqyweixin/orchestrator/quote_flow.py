@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 _EXTRACT_SYSTEM = """你是国际物流询价参数抽取助手。根据用户一条消息，判断意图并提取百运快递查价（GetCommodityEXP）所需字段。
 
 只输出一个 JSON 对象，不要 markdown、不要解释。字段：
-- intent: "quote"=询价/运费/报价/多少钱；"track"=查轨迹/运单/跟踪号；其它="chat"
+- intent: "quote"=询价/运费/报价/多少钱；其它="chat"（查轨迹/换跟踪号不要标 quote）
 - origin_city: 起运城市中文，未提及则 "深圳市"
 - destination_country_code: 目的国家/地区 ISO 3166-1 二位大写字母（如 US、GB、DE、AU、CA、JP）。用户说「美国」则 US。
 - weight_kg: 重量(kg)，数字；无法确定则 null
@@ -199,8 +199,6 @@ async def try_build_quote_reply(
     intent = str(extracted.get("intent") or "chat").strip().lower()
     logger.info("询价意图抽取 intent=%s keys=%s", intent, list(extracted.keys()))
 
-    if intent == "track":
-        return None
     if intent != "quote":
         return None
 

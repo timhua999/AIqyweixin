@@ -90,7 +90,12 @@ class Settings(BaseSettings):
         default="By56CustomerAPI.byPackOrder.PackOrder.GetDeliveryNO",
         validation_alias=AliasChoices("BY56_METHOD_DELIVERY_NO"),
     )
-    # §3.1 快递查价 GetCommodityEXP（非 §3.7）
+    # §3.6 货物追踪 QueryBatch（轨迹节点，非 §3.7）
+    by56_method_track_batch: str | None = Field(
+        default="By56CustomerAPI.byPackOrder.PackOrder.QueryBatch",
+        validation_alias=AliasChoices("BY56_METHOD_TRACK_BATCH"),
+    )
+    # §3.1 快递查价 GetCommodityEXP
     by56_method_quote: str | None = Field(
         default="By56CustomerAPI.byExpOrder.ExpOrder.GetCommodityEXP",
         validation_alias=AliasChoices("BY56_METHOD_QUOTE"),

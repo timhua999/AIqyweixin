@@ -1,5 +1,5 @@
 """
-企微对话回复编排：询价走百运 API + LLM 抽参；其它走 LLM/模板。
+企微对话回复编排：轨迹/跟踪号/询价走百运 API + LLM 抽参；其它走 LLM/模板。
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ import logging
 from aiqyweixin.config import get_settings
 from aiqyweixin.llm.client import LlmError, LlmNotConfiguredError, get_llm_client
 from aiqyweixin.orchestrator.quote_flow import try_build_quote_reply
+from aiqyweixin.orchestrator.track_flow import try_build_track_reply
 from aiqyweixin.wecom.messages import format_reply_text
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,11 @@ async def build_wecom_reply(user_text: str | None) -> str:
     if not llm_is_enabled():
         logger.debug("LLM 未启用或未配置，使用模板回复")
         return _template_reply(user_text)
+
+    track_reply = await try_build_track_reply(text)
+    if track_reply is not None:
+        logger.info("走百运轨迹/跟踪号回复 字符数=%s", len(track_reply))
+        return track_reply
 
     quote_reply = await try_build_quote_reply(text)
     if quote_reply is not None:
