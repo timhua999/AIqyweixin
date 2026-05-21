@@ -68,7 +68,23 @@ async def _main() -> int:
 
 
 def _test_sign_vector() -> None:
-    """与文档 C# 样例一致的签名单测（可选）。"""
+    """与文档样例 + CallInterface.py CreateSign 对照。"""
+    import copy
+    import hashlib
+
+    def _sign_call_interface(paraments: dict, secret: str) -> str:
+        sort1 = copy.deepcopy(paraments)
+        for key, value in list(sort1.items()):
+            if key == "" or value == "":
+                del sort1[key]
+        sorted_param = sorted(sort1.items(), key=lambda d: d[0].lower())
+        query = [secret.upper()]
+        for k, v in sorted_param:
+            query.append(k)
+            query.append(v)
+        s = "".join(query) + secret.upper()
+        return hashlib.md5(s.encode("utf8")).hexdigest().upper()
+
     params = {
         "bykey": "FD981D0B-BC8B-4A55-ABD0-C571B51B4990",
         "method": "By56CustomerAPI.byExpOrder.ExpOrder.GetCommodityEXP",
@@ -79,7 +95,22 @@ def _test_sign_vector() -> None:
         "id": "1",
     }
     secret = "028D0512-E130-4EB3-8583-BE7F53FF7085"
-    print("sign sample:", create_sign(params, secret))
+    ours = create_sign(params, secret)
+    official = _sign_call_interface(params, secret)
+    print("sign sample (doc):", ours)
+    print("CallInterface.py:  ", official, "OK" if ours == official else "MISMATCH")
+
+    with_biz = {
+        **params,
+        "method": "By56CustomerAPI.byPackOrder.PackOrder.GetDeliveryNO",
+        "WaybillNO": "WE001",
+        "WaybillType": "1",
+    }
+    with_biz["method"] = with_biz["method"].upper()
+    ours2 = create_sign(with_biz, secret)
+    off2 = _sign_call_interface(with_biz, secret)
+    print("with WaybillNO:    ", ours2)
+    print("CallInterface.py:  ", off2, "OK" if ours2 == off2 else "MISMATCH")
 
 
 if __name__ == "__main__":

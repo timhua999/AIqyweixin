@@ -38,13 +38,20 @@ class By56ApiError(Exception):
 
 def create_sign(params: dict[str, str], secret: str) -> str:
     """
-    百运 TOP 签名（与文档 §2.1 C# CreateSign 一致）：
-    secret + key1value1key2value2... + secret → MD5 → 大写十六进制。
+    百运签名（与官方 CallInterface.py CreateSign 一致）：
+    去掉 sign 与空 key/value → 按参数名 **不区分大小写** 排序 →
+    secret + key1 + value1 + ... + secret → MD5 UTF-8 → 大写十六进制。
     """
     secret_u = secret.upper()
-    filtered = {k: str(v) for k, v in params.items() if k != "sign" and k and v is not None and str(v) != ""}
+    filtered: dict[str, str] = {}
+    for k, v in params.items():
+        if k == "sign" or k is None or str(k) == "":
+            continue
+        if v is None or str(v) == "":
+            continue
+        filtered[str(k)] = str(v)
     parts = secret_u
-    for key in sorted(filtered.keys()):
+    for key in sorted(filtered.keys(), key=str.lower):
         parts += key + filtered[key]
     parts += secret_u
     return hashlib.md5(parts.encode("utf-8")).hexdigest().upper()
@@ -94,7 +101,7 @@ class By56RouterClient:
     def _system_params(self, method: str) -> dict[str, str]:
         return {
             "bykey": self._bykey.upper(),
-            "method": method,
+            "method": method.upper(),
             "timestamp": _now_timestamp(),
             "calls": self._calls,
             "format": "json",
