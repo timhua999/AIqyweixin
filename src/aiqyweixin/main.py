@@ -59,12 +59,15 @@ def create_app() -> FastAPI:
 
     app.include_router(wecom_router)
     settings = get_settings()
-    if settings.database_url and (
-        settings.enable_debug_routes or (settings.app_env or "").lower() == "development"
-    ):
+    env_dev = (settings.app_env or "").lower() == "development"
+    if settings.database_url and (settings.enable_debug_routes or env_dev):
         from aiqyweixin.debug_routes import router as debug_router
 
         app.include_router(debug_router)
+    if settings.database_url and (settings.enable_admin_routes or env_dev):
+        from aiqyweixin.admin_routes import router as admin_router
+
+        app.include_router(admin_router)
     return app
 
 

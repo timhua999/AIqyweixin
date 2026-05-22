@@ -4,5 +4,5 @@
 - **建议**：
   - `quote.openapi.yaml`：查价接口（请求/响应/错误码/鉴权）。
   - `track.openapi.yaml`：轨迹接口（请求/响应/错误码/鉴权）。
-- **百运查价（进行中）**：[by56-quote-api.md](./by56-quote-api.md) — 请在此填写官方规则，并与 `adapters/by56.py` 同步。
+- **百运 Router API（交接）**：[by56-quote-api.md](./by56-quote-api.md) — §3.1 查价 / §3.6 轨迹 / §3.7 跟踪号，与 `adapters/by56.py`、企微 `quote_flow` / `track_flow` 同步。
 

@@ -54,3 +54,11 @@ curl.exe -X POST http://127.0.0.1:8000/debug/unanswered-ticket
 
 生产请将 `APP_ENV=production` 且 `ENABLE_DEBUG_ROUTES=false`，该路由不会注册。
 
+## 产品能力：知识库、转人工、未答工单
+
+配置 `DATABASE_URL` 并执行 `alembic upgrade head` 后，企微对话将按顺序处理：**转人工关键词 → 百运查价/轨迹 → 知识库问答 → 通用 LLM**；转人工或（可选）知识库/LLM 失败时会写入 `unanswered_tickets`。
+
+- 知识库：在 `data/knowledge/` 放置 Markdown（见示例 `faq-packaging.md`）。
+- 环境变量与流程说明：[docs/product-kb-handoff.md](docs/product-kb-handoff.md)
+- 管理列表：`ENABLE_ADMIN_ROUTES=true` 时 `GET /admin/unanswered-tickets?status=pending`
+

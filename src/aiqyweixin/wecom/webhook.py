@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from aiqyweixin.config import get_settings
 from aiqyweixin.orchestrator.chat import build_wecom_reply
-from aiqyweixin.wecom.messages import extract_user_text, should_reply
+from aiqyweixin.wecom.messages import extract_message_context, extract_user_text, should_reply
 from aiqyweixin.wecom.reply import post_active_reply
 from aiqyweixin.wecom.vendor.callback_json_python3 import ierror
 from aiqyweixin.wecom.wxcrypt import (
@@ -196,9 +196,10 @@ async def wecom_callback_message(
 
     response_url = str(payload["response_url"]).strip()
     user_text = extract_user_text(payload)
+    msg_ctx = extract_message_context(payload)
     try:
         _trace(f"开始生成回复 msgid={msgid} msgtype={msgtype}")
-        reply_content = await build_wecom_reply(user_text)
+        reply_content = await build_wecom_reply(user_text, msg_ctx)
         logger.info(
             "LLM/回复就绪 msgid=%s msgtype=%s 字符数=%s 日志预览(非全文)=%s",
             msgid or "(none)",

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from aiqyweixin.orchestrator.context import WecomMessageContext
+
 
 def extract_user_text(payload: dict[str, Any]) -> str | None:
     """从 text / voice / mixed 消息中提取可读文本。"""
@@ -39,6 +41,34 @@ def extract_user_text(payload: dict[str, Any]) -> str | None:
                     parts.append(content.strip())
         return "\n".join(parts) if parts else None
     return None
+
+
+def extract_message_context(payload: dict[str, Any]) -> WecomMessageContext:
+    """从回调 JSON 提取 msgid、userid、会话标识。"""
+    msgid = str(payload.get("msgid") or payload.get("MsgId") or "")
+
+    user_id = payload.get("userid") or payload.get("user_id")
+    if not user_id and isinstance(payload.get("from"), dict):
+        user_id = payload["from"].get("userid")
+    wecom_user_id = str(user_id).strip() if user_id else "unknown"
+
+    conv = (
+        payload.get("chatid")
+        or payload.get("chat_id")
+        or payload.get("conversation_id")
+        or payload.get("open_kfid")
+    )
+    conversation_id = str(conv).strip() if conv else None
+
+    chat_type = payload.get("chattype") or payload.get("chat_type")
+    chat_type_s = str(chat_type).strip() if chat_type else None
+
+    return WecomMessageContext(
+        msgid=msgid,
+        wecom_user_id=wecom_user_id,
+        conversation_id=conversation_id,
+        chat_type=chat_type_s,
+    )
 
 
 def should_reply(payload: dict[str, Any]) -> bool:

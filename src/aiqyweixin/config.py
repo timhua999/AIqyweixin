@@ -105,6 +105,44 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("BY56_TIMEOUT_SECONDS"),
     )
 
+    # 知识库（Markdown 文件 + 关键词检索 + LLM）
+    kb_enabled: bool = Field(default=True, validation_alias=AliasChoices("KB_ENABLED"))
+    kb_data_dir: str | None = Field(default=None, validation_alias=AliasChoices("KB_DATA_DIR"))
+    kb_top_k: int = Field(default=3, validation_alias=AliasChoices("KB_TOP_K"))
+    kb_min_score: int = Field(default=1, validation_alias=AliasChoices("KB_MIN_SCORE"))
+
+    # 转人工 + 未答工单
+    handoff_enabled: bool = Field(default=True, validation_alias=AliasChoices("HANDOFF_ENABLED"))
+    handoff_default_userids: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("HANDOFF_DEFAULT_USERIDS"),
+    )
+    handoff_dm_fallback_message: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("HANDOFF_DM_FALLBACK_MESSAGE"),
+    )
+    # 每行：关键词=>userid1,userid2  例：投诉=>zhangsan,lisi
+    handoff_keyword_rules: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("HANDOFF_KEYWORD_RULES"),
+    )
+    unanswered_save_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("UNANSWERED_SAVE_ENABLED"),
+    )
+    unanswered_on_kb_miss: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("UNANSWERED_ON_KB_MISS"),
+    )
+    unanswered_on_llm_fallback: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("UNANSWERED_ON_LLM_FALLBACK"),
+    )
+    enable_admin_routes: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("ENABLE_ADMIN_ROUTES"),
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:
